@@ -1,77 +1,48 @@
-# GeoMiner Bolivia v0.4
+# GeoMiner Bolivia · v0.5
 
-Aplicación de prospección satelital **preliminar**. NO certifica minerales, leyes, reservas, profundidad, derechos ni éxito de exploración.
+Plataforma **experimental de prospección espectral superficial** con Sentinel-2 y generación opcional de informes con OpenAI. **No certifica depósitos, minerales, reservas, leyes ni derechos mineros.**
 
-## Instalación rápida sobre la versión 0.3 de tu Mac
+## Cambios v0.5
 
-Descarga el ZIP **de actualización v0.4**, que contiene únicamente archivos modificados/nuevos, y descomprímelo dentro de `~/Downloads/geominer-bolivia`:
+Consulta `CHANGELOG_v0.5.md` para detalles. Esta versión añade agrupación de zonas P90+ contiguas, marcadores GPS aproximados, panel **Sectores**, GeoJSON de puntos de inspección y mapas con sectores numerados en el informe PDF.
+
+## Actualizar sobre v0.4
+
+Abre la Terminal de tu Mac:
 
 ```bash
 cd ~/Downloads/geominer-bolivia
-unzip -o ~/Downloads/GeoMiner_Bolivia_v0.4_actualizacion.zip -d .
+unzip -o ~/Downloads/GeoMiner_Bolivia_v0.5_actualizacion.zip -d .
 npm install
 npm test
 npm run build
-npm run dev
 ```
 
-Abre `http://localhost:5173`. Si npm está bloqueado por PowerShell en Windows usa `npm.cmd install` y `npm.cmd run dev`.
+Si la compilación termina correctamente, abre GitHub Desktop, crea el commit `GeoMiner v0.5 - Sectores espectrales y coordenadas` y presiona `Push origin`. Vercel publicará automáticamente la nueva versión si la integración está activa.
 
-## Flujo de uso
+## Probar
 
-1. Selecciona una zona de hasta 5 × 5 km en Potosí u otra región, preferiblemente con suelo descubierto.
-2. En **Análisis**, consulta una escena y **procesa sus bandas**. Si la escena falla, selecciona otra.
-3. En **Informe**, pulsa **Descargar informe PDF gratuito**. El archivo contiene datos calculados, límites geográficos, método y advertencias.
-4. Opcional: configura OpenAI (ver abajo) para generar texto interpretativo. Después puedes descargar un PDF con ese texto.
+1. En https://geominer-bolivia.vercel.app selecciona un área de hasta 25 km².
+2. En **Análisis**, consulta y procesa una escena Sentinel-2 (fechas del estudio y del satélite histórico pueden ser diferentes).
+3. Abre **Sectores**, elige B4/B2 (respuesta férrica) o B11/B12 (respuesta SWIR).
+4. Selecciona un sector numerado en la lista o sobre el mapa. Consulta sus coordenadas aproximadas y exporta GeoJSON.
+5. Abre **Informe** y descarga el PDF; contiene listado de sectores y números ubicados sobre la imagen de índices.
+6. Si generas interpretación de IA, usa el código privado configurado en Vercel, nunca la clave API.
 
-## Configurar OpenAI SIN exponer claves
+## Entorno OpenAI
 
-1. En `https://platform.openai.com/api-keys` genera una clave de proyecto que usarás solo en el servidor.
-2. En Vercel abre **Project Settings → Environment Variables** del proyecto `geominer-bolivia` de Amanda.
-3. Agrega:
+El backend reconoce `OPENAI_API_KEY` **o** `openai_api_key`, y `GEOMINER_ADMIN_CODE` **o** `geominer_admin_code`, así como `GEOMINER_OPENAI_MODEL` o `geominer_openai_model`. No debes cambiar ni revelar esas claves. La selección de modelo puede mantenerse como está configurada si la API ya responde en tu proyecto.
 
-| Variable | Valor | Alcance |
-|---|---|---|
-| `OPENAI_API_KEY` | Clave privada de API | Servidor (Production) |
-| `GEOMINER_ADMIN_CODE` | Una contraseña aleatoria LARGA creada por ti | Servidor (Production) |
-| `GEOMINER_OPENAI_MODEL` | `gpt-6-luna` | Servidor (Production) |
+## Precauciones técnicas
 
-4. Guarda las variables y haz **Redeploy** para que se carguen en funciones Vercel.
-5. En GeoMiner, pestaña **Informe**, introduce **el código de acceso**, no la clave API, y pulsa *Generar interpretación con IA*. El código se mantiene solo en memoria hasta terminar la petición y se borra del formulario.
-6. Para probar OpenAI en localhost, crea un `.env` **únicamente en tu Mac** y carga las variables en la sesión que ejecuta Vite (por ejemplo, `set -a; source .env; set +a; npm run dev`). El `.env` está excluido por `.gitignore`.
+- Las zonas se calculan por encima del percentil 90 de cada índice **dentro del área escogida**, agrupando componentes de al menos 3 celdas conectadas en diagonal u horizontal/vertical.
+- Cada marcador apunta aproximadamente al **centro de un píxel de índice máximo** del grupo, no a una muestra real tomada sobre el terreno.
+- El muestreo es 96 × 96 y no equivale a la resolución nativa Sentinel-2 ni a ubicación topográfica de precisión.
+- Al elegir otra fecha, terreno o indicador, se recalculan los sectores: no son los mismos lugares garantizados.
+- Las interpretaciones de OpenAI describen indicadores y recomiendan contrastar con mapas geológicos y muestreo; no sustituyen a un geólogo.
+- El visor de calles OSM se usa como base experimental. Para uso comercial y altos volúmenes conviene contratar un proveedor con términos adecuados.
+- Esta actualización NO requiere aún Supabase ni permisos nuevos en Vercel.
 
-**No envíes las claves ni los códigos por chat, capturas ni GitHub.** La API de OpenAI se cobra por tokens y tiene facturación separada de ChatGPT.
+## Tecnología
 
-**Importante:** no habilites esto como servicio público de pago todavía. Para producción hace falta autenticación (Supabase Auth), cuentas de cliente, límites de uso en servidor, monitor de gasto, términos comerciales de la cartografía y revisión geológica.
-
-## Contenido y calidad de los resultados
-
-- Los índices son B4/B2 y B11/B12 sobre reflectancia Sentinel-2 L2A; **no son pruebas de minerales concretos**.
-- La máscara usa SCL y NDVI para limitar el análisis a suelo aparentemente descubierto; SCL 7 es «sin clasificar», por lo que incluye incertidumbre.
-- El cálculo del navegador reescala una zona a cuadrícula 96x96; no corresponde a resolución espacial nativa.
-- Los percentiles son valores **relativos dentro del terreno elegido**, no concentraciones ni potencial comercial.
-- Los datos enviados al modelo provienen del navegador; no están auditados independientemente.
-- `store:false` evita guardar la respuesta en el almacenamiento de Responses API de manera predeterminada, sujeto a las políticas de tratamiento de datos aplicables.
-- PDF se genera localmente sin subir a Supabase ni utilizar servicios externos.
-
-## Fuente de documentación
-
-- OpenAI Responses API: https://developers.openai.com/api/reference/resources/responses/methods/create
-- Modelos: https://developers.openai.com/api/docs/models
-- Element84 Earth Search: https://earth-search.aws.element84.com/v1
-- Copernicus Data Space: https://dataspace.copernicus.eu/
-
-## Archivos clave
-
-- `src/report-data.js`: ensamblado objetivo del informe.
-- `src/report-pdf.js`: descarga PDF usando `jspdf` 4.2.1 o posterior, con correcciones de seguridad.
-- `api/ai-report.js`: handler de Vercel.
-- `lib/report-api.js`: validación, control de acceso e integración Responses API.
-- `tests/report.test.mjs`: pruebas sin llamadas reales ni costos.
-
-## Versiones
-
-- 0.1: mapa y catálogo Copernicus
-- 0.2: GPS, GeoJSON/KML y vistas base
-- 0.3: índices espectrales iniciales
-- **0.4: informes PDF y conexión privada a OpenAI**
+React + Vite, MapLibre, lectura COG GeoTIFF con `geotiff`, reproyección `proj4`, percentiles y análisis de componentes conexas en JavaScript, `jsPDF` y Responses API de OpenAI mediante función de Vercel.
