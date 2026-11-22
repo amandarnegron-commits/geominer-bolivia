@@ -61,11 +61,11 @@ export default function App() {
       style: {
         version: 8,
         sources: {
-          'carto': { type:'raster', tiles:['https://basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png'], tileSize:256, attribution:'© OpenStreetMap contributors © CARTO' },
-          'satellite-2016': { type:'raster', tiles:['https://tiles.maps.eox.at/wmts/1.0.0/s2cloudless-2016_3857/default/g/{z}/{y}/{x}.jpg'], tileSize:256, maxzoom:13, attribution:'Sentinel-2 cloudless 2016 — EOX IT Services GmbH (Contains modified Copernicus Sentinel data 2016), CC BY 4.0' }
+          'osm': { type:'raster', tiles:['https://tile.openstreetmap.org/{z}/{x}/{y}.png'], tileSize:256, attribution:'© <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener noreferrer">OpenStreetMap contributors</a>', maxzoom:19 },
+          'satellite-2016': { type:'raster', tiles:['https://tiles.maps.eox.at/wmts/1.0.0/s2cloudless_3857/default/g/{z}/{y}/{x}.jpg'], tileSize:256, maxzoom:13, attribution:'Sentinel-2 cloudless 2016 — EOX IT Services GmbH (Contains modified Copernicus Sentinel data 2016), CC BY 4.0' }
         },
         layers: [
-          { id:'base', type:'raster', source:'carto' },
+          { id:'base', type:'raster', source:'osm' },
           { id:'satellite-2016-layer', type:'raster', source:'satellite-2016', layout:{visibility:'none'} }
         ]
       },
@@ -115,7 +115,7 @@ export default function App() {
     if (!instance) return;
     const change = () => {
       if (!instance.getLayer('base') || !instance.getLayer('satellite-2016-layer')) return;
-      instance.setLayoutProperty('base','visibility',baseLayer==='streets'?'visible':'none');
+      instance.setLayoutProperty('base','visibility','visible');
       instance.setLayoutProperty('satellite-2016-layer','visibility',baseLayer==='historical'?'visible':'none');
     };
     if (instance.isStyleLoaded()) change(); else instance.once('load', change);
@@ -234,7 +234,7 @@ export default function App() {
           </button>
           <div className="limit-note"><Info size={14}/><span>Consulta el catálogo oficial. La búsqueda aún no detecta minerales.</span></div>
         </div>
-        <div className="sidebar-foot"><span className="live-dot"/> GeoMiner v0.2 <span className="foot-right">PROTOTIPO</span></div>
+        <div className="sidebar-foot"><span className="live-dot"/> GeoMiner v0.2.1 <span className="foot-right">PROTOTIPO</span></div>
       </aside>
       <main className="main-area">
         <header className="topbar">
@@ -244,7 +244,7 @@ export default function App() {
           </div>
           <div className="topbar-meta">
             <span className="state-pill"><span className="live-dot"/> Catálogo Copernicus</span>
-            <span className="v-tag">Beta 0.2</span>
+            <span className="v-tag">Beta 0.2.1</span>
           </div>
         </header>
         <section className="work-area">
@@ -261,7 +261,7 @@ export default function App() {
             </div>
             <div className="map-bottom">
               <div><Info size={16}/><span>Los límites dibujados son aproximados; no equivalen a derechos mineros ni catastros oficiales.</span></div>
-              <span>{baseLayer==='historical'?'Sentinel-2 2016 © EOX, CC BY 4.0':'OpenStreetMap / CARTO'}</span>
+              <span>{baseLayer==='historical'?'Sentinel-2 2016 © EOX, CC BY 4.0':'OpenStreetMap'}</span>
             </div>
           </div>
           <div className="inspector">
