@@ -1,8 +1,9 @@
 /** PDF generado localmente en el navegador; nunca requiere clave API. */
 import { jsPDF } from 'jspdf';
+import { aiBlocks } from './ai-text.js';
 
 const readable = value => value===null||value===undefined?'s/d':String(value);
-export function downloadReportPdf(report,{aiText='',heatmapUrl=null,indicator='iron',validation=null,fieldNotes=[]}={}){
+export function downloadReportPdf(report,{aiText='',heatmapUrl=null,indicator='iron',validation=null,fieldNotes=[],geologyEvidence=[],geoMatches=[]}={}){
   if(!report?.scene?.id)throw new Error('El informe necesita datos espectrales ya procesados.');
   const pdf=new jsPDF({unit:'mm',format:'a4'});
   const dark=[24,48,61],green=[22,132,110],muted=[94,112,119];
@@ -45,7 +46,6 @@ export function downloadReportPdf(report,{aiText='',heatmapUrl=null,indicator='i
   if(report.decision){
     heading('Dictamen operativo: SI / NO / NO EVALUABLE');
     para('Anomalias espectrales: '+readable(report.decision.spectralAnswer),{size:10,bold:true,color:green,after:4});
-    para('Mineralizacion historica regional: '+readable(report.decision.districtEvidence),{size:9,after:3});
     para('Mineral confirmado en sectores: '+readable(report.decision.mineralAnswer),{size:9,after:3});
     para('Potencial economico: '+readable(report.decision.economicAnswer),{size:9,after:3});
     heading('Sectores ordenados para revision, NO por probabilidad');
@@ -85,23 +85,15 @@ export function downloadReportPdf(report,{aiText='',heatmapUrl=null,indicator='i
       para('Capa calculada: '+({iron:'B4/B2',clay:'B11/B12',ferrous:'B11/B8A',rededge:'B7/B5'}[indicator]||indicator)+'. Los circulos son sectores por encima de P90. El fondo representa bandas procesadas, no verificacion de mineral.',{size:9,color:muted});
     }catch{para('No fue posible incrustar la imagen de indicadores.',{color:muted,size:9});}
   }
-  if(report.geologicalContext){
-    heading('Contexto geologico documentado (NO validacion espacial)');
-    para(report.geologicalContext.observedMetals,{size:9});
-    para(report.geologicalContext.caution,{size:9,color:muted});
-    for(const source of report.geologicalContext.sources||[]) {
-      para(source.agency+': '+source.title+' | '+source.url,{size:8,after:2});
-    }
-  }
   heading('Cartografia geologica y relieve (referencias externas)');
   para('Visores y capas publicas: https://ide.sergeomin.gob.bo/ | WMS GeoBolivia, geologia y fallas regionales. Su escala es demasiado general para confirmar un sector de decenas de metros. No se automatizaron cruces GIS.',{size:9,color:muted});
   if(report.control){
     heading('Comparacion con area vecina (control descriptivo)');
     para('Orientacion '+readable(report.control.direction)+' | Escena usada '+readable(report.control.sceneId)+' | Limites '+(report.control.bbox||[]).join(', '),{size:9});
-    for(const kind of ['iron','clay']){const s=report.control.indices?.[kind];if(s)row(kind==='iron'?'B4/B2':'B11/B12','Mediana Cerro '+readable(s.mainP50)+' | vecino '+readable(s.controlP50)+' | delta '+readable(s.deltaP50));}
+    for(const kind of ['iron','clay']){const s=report.control.indices?.[kind];if(s)row(kind==='iron'?'B4/B2':'B11/B12','Mediana principal '+readable(s.mainP50)+' | vecino '+readable(s.controlP50)+' | delta '+readable(s.deltaP50));}
     para(report.control.warning||'Comparacion descriptiva, no prueba de minerales.',{size:9,color:muted});
   }
-  heading('Comprobaciones del piloto (no certifican mineral)');
+  heading('Comprobaciones del area (no certifican mineral)');
   if(validation){
     row('Escena inicial',readable(validation.firstDate));
     row('Escena secundaria',readable(validation.secondDate));
@@ -116,15 +108,34 @@ export function downloadReportPdf(report,{aiText='',heatmapUrl=null,indicator='i
   for(const note of fieldNotes.slice(0,15)){
     para('Sector '+readable(note.number)+' ('+readable(note.indicator)+'): '+readable(note.status)+' | '+readable(note.lat)+', '+readable(note.lon)+' | '+readable(note.notes),{size:8,after:2});
   }
+  if(geoMatches.length){
+    heading('Intersecciones locales con carta GeoJSON (NO AUDITADAS)');
+    para('Los polígonos se aportaron por el operador en EPSG:4326. Se verificó la coincidencia con el centro aproximado de cada sector, no la escala ni la procedencia del mapa.',{size:9,color:muted});
+    for(const item of geoMatches.slice(0,30))para((item.kind==='iron'?'F-':'S-')+item.number+' | Unidad declarada: '+item.unit+' | Litologia: '+item.lithology+' | Capa: '+item.source,{size:8,after:2});
+  }
+  if(geologyEvidence.length){
+    heading('Antecedentes declarados por operador (SIN VERIFICACION)');
+    for(const row of geologyEvidence.slice(0,12)){
+      para('Tipo: '+readable(row.type)+' | Referencia: '+readable(row.source)+' | Sector: '+readable(row.sector||'sin asignar'),{size:9,bold:true,after:1});
+      para(readable(row.description),{size:9,after:3});
+    }
+    para('Los antecedentes cargados por el usuario no han sido cotejados ni autentificados por GeoMiner.',{size:9,color:muted});
+  }
   heading('5. Metodologia y limites');
   for(const item of report.methods)para('- '+item,{size:9,after:2});
   heading(aiText?'6. Interpretacion asistida por OpenAI':'6. Interpretacion pendiente');
-  if(aiText)para(aiText.replace(/^#{1,3}\s+/gm,'').replace(/\*\*/g,''),{size:10,after:3});
+  if(aiText){
+    for(const block of aiBlocks(aiText)){
+      const value=block.text.replace(/\*\*/g,'');
+      if(block.kind==='heading')heading(value);
+      else para(value,{size:10,after:3});
+    }
+  }
   else para('Este informe contiene datos calculados automaticamente. No se genero una interpretacion con IA ni se realizo validacion por profesional geologo.',{size:10});
   heading('Advertencia tecnica');
   para(report.disclaimer,{size:10,bold:true,color:[148,63,44],after:4});
   para('Se recomienda inspeccion de campo, cartografia geologica y analisis de laboratorio antes de tomar decisiones de inversion.',{size:9,color:muted});
   const pages=pdf.getNumberOfPages();
-  for(let i=1;i<=pages;i++){pdf.setPage(i);pdf.setFontSize(8);pdf.setTextColor(132,150,155);pdf.text('GeoMiner Bolivia v0.9 | Estudio preliminar | Pag. '+i+' / '+pages,M,288);}
+  for(let i=1;i<=pages;i++){pdf.setPage(i);pdf.setFontSize(8);pdf.setTextColor(132,150,155);pdf.text('GeoMiner Bolivia v1.1 | Estudio preliminar | Pag. '+i+' / '+pages,M,288);}
   pdf.save('GeoMiner_Informe_'+(report.scene.date||'escena').slice(0,10)+'.pdf');
 }

@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { squareFromCenter, bboxGeoJSON, bboxKml } from '../src/geo.js';
 
-test('genera selección alrededor de un punto GPS en Potosí',()=>{
+test('genera selección alrededor de un punto GPS en ubicación elegida',()=>{
   const b = squareFromCenter(-65.753,-19.572,5);
   assert.equal(b.length,4);
   assert.ok(b[0]<-65.753 && b[2]>-65.753);

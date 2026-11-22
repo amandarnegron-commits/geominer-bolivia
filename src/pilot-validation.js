@@ -69,6 +69,6 @@ export function exportValidationBundle({bbox,sceneId,comparison,notes=[]}){
     bbox: Array.isArray(bbox)?bbox.map(n=>Number(n.toFixed(6))):null,
     firstScene:sceneId,comparison:comparison||null,
     fieldNotes:notes.filter(n=>n&&typeof n.key==='string'),
-    disclaimer:'Notas del operador sin auditoría independiente. Un contraste temporal no confirma mineralización ni habilita ingreso al Cerro Rico.'
+    disclaimer:'Notas del operador sin auditoría independiente. Un contraste temporal no confirma mineralización ni sustituye permisos y verificación en terreno.'
   };
 }

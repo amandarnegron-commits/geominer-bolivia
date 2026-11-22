@@ -41,14 +41,14 @@ test('GeoJSON conserva el índice, el punto GPS y la advertencia',()=>{
  assert.match(exported.features[0].properties.disclaimer,/NO es mineral/);
 });
 test('el PDF obtiene sectores de ambas bandas desde datos numéricos, sin API',()=>{
- const report=prepareReport({bbox,region:'Potosí',scene:{id:'sentinel-2-l2a-2026-10-18',date:'2026-10-18T10:00:00Z',platform:'sentinel-2a',cloud:0},result:grid()});
- assert.equal(report.version,'0.9');
+ const report=prepareReport({bbox,region:'Área GPS',scene:{id:'sentinel-2-l2a-2026-10-18',date:'2026-10-18T10:00:00Z',platform:'sentinel-2a',cloud:0},result:grid()});
+ assert.equal(report.version,'1.1');
  assert.ok(report.zones.iron.length>0);
  assert.equal(report.zones.iron[0].lat,detectAnomalyZones(grid(),bbox,'iron')[0].lat);
  assert.match(report.methods.join(' '),/al menos 3 píxeles/);
 });
 test('la IA acepta variables de Amanda en minúsculas y recibe solo sectores validados',async()=>{
- const report=prepareReport({bbox,region:'Potosí',scene:{id:'sentinel-2-l2a-2026-10-18',date:'2026-10-18T10:00:00Z',platform:'sentinel-2a',cloud:0},result:grid()});
+ const report=prepareReport({bbox,region:'Área GPS',scene:{id:'sentinel-2-l2a-2026-10-18',date:'2026-10-18T10:00:00Z',platform:'sentinel-2a',cloud:0},result:grid()});
  let sent;
  const answer=await createAiReport({data:report,passcode:'clave-larga',env:{openai_api_key:'token-ficticio',geominer_admin_code:'clave-larga',GEOMINER_OPENAI_MODEL:'modelo-prueba'},transport:async(url,options)=>{
    sent=JSON.parse(options.body);

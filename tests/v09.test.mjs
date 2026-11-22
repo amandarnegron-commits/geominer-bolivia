@@ -5,7 +5,7 @@ import {prepareReport} from '../src/report-data.js';
 import {createAiReport} from '../lib/report-api.js';
 
 const bbox=[-65.79,-19.63,-65.77,-19.61];
-const scene={id:'S2A_v09_CerroRico_20261121',date:'2026-11-21T10:00:00Z',cloud:2,platform:'sentinel-2a'};
+const scene={id:'S2A_v09_20261121',date:'2026-11-21T10:00:00Z',cloud:2,platform:'sentinel-2a'};
 function sample({both=true,changed=false,valid=100}={}){
  const width=10,height=10;
  const iron=Float32Array.from({length:100},(_,i)=>1+i/1000);
@@ -17,7 +17,7 @@ function sample({both=true,changed=false,valid=100}={}){
  return {width,height,iron,clay,valid,total:100,pixelAreaM2:400};
 }
 test('hay SI a grupos espectrales cuando los datos muestran sectores, sin decir SI a minerales',()=>{
- const report=prepareReport({bbox,scene,region:'Potosí',result:sample()});
+ const report=prepareReport({bbox,scene,region:'Área GPS',result:sample()});
  assert.match(report.decision.spectralAnswer,/SÍ/);
  assert.match(report.decision.mineralAnswer,/NO DETERMINADO/);
  assert.match(report.decision.economicAnswer,/NO EVALUABLE/);

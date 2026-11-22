@@ -215,3 +215,30 @@ h1{font-family:Manrope,sans-serif;font-size:23px;color:#18313d;margin:0;letter-s
 .evidence-zone-hint{padding:8px 9px;background:#fff;border-radius:6px;color:#486b64;font-size:10px;line-height:1.6}
 
 .anomaly-map-marker.evidence-high{outline:3px solid #e3b746;outline-offset:2px;box-shadow:0 0 0 3px #fff,0 3px 10px #3b312a80}
+
+/* v1.0 · expediente geológico documentado y consultas al asistente */
+.geologist-dossier,.geology-evidence-entry,.geologist-docs-note{margin:14px 0;padding:15px;border:1px solid rgba(65,130,119,.24);border-radius:13px;background:rgba(24,107,90,.055)}
+.geologist-fact{padding:12px 0;border-bottom:1px solid rgba(90,123,124,.18)}
+.geologist-fact:last-child{border-bottom:0}
+.geologist-fact>div{display:flex;align-items:flex-start;justify-content:space-between;gap:8px}
+.geologist-fact p{margin:6px 0;line-height:1.55;font-size:.9rem}
+.geologist-fact small{font-size:.76rem;opacity:.72}
+.geologist-fact div small{white-space:nowrap}
+.geologist-warning{color:#b45b27;font-size:.88rem}
+.geology-evidence-entry label,.report-ai-section>label:not(.v08-preview-toggle){display:block;margin-top:12px;margin-bottom:6px;font-size:.86rem;font-weight:600}
+.geology-evidence-entry input,.geology-evidence-entry select,.geology-evidence-entry textarea,.report-ai-section textarea{box-sizing:border-box;width:100%;padding:10px 11px;border:1px solid #b6cdca;border-radius:8px;background:var(--surface,#fff);color:inherit;font:inherit;resize:vertical}
+.geologist-quickquestions{display:flex;flex-wrap:wrap;gap:6px;margin:10px 0}
+.geologist-quickquestions button{padding:7px 9px;border-radius:12px;border:1px solid #99beb6;background:transparent;color:inherit;font-size:.77rem;cursor:pointer}
+.geologist-quickquestions button:hover{background:rgba(24,107,90,.12)}
+.geologist-docs-note{font-size:.86rem}
+.geologist-docs-note button{margin-top:8px}
+.geologist-evidence-list{margin-top:12px}
+
+/* GeoMiner v1.0 - Flujo por coordenadas WGS84 */
+.gps-paste{display:flex;flex-direction:column;gap:6px;font-size:.79rem;margin:10px 0 8px}
+.gps-paste input{width:100%;min-height:36px;padding:8px 10px;border:1px solid #86b7b1;border-radius:9px;background:transparent;color:inherit;font-size:.91rem}
+.gps-card>.spectral-export{width:100%;justify-content:center;margin-bottom:12px}
+.pilot-example{border:1px solid #c3dcd4;border-radius:12px;padding:11px;margin:14px 0 18px}
+.pilot-example summary{font-weight:600;cursor:pointer}
+.pilot-example .pilot-warning{margin:10px 0}
+.sector-location-link{display:inline-flex;align-items:center;gap:7px;text-decoration:none;margin-left:7px}

@@ -23,7 +23,7 @@ function localApi(){
       try {
         for await (const chunk of req) {raw+=chunk.toString();if(raw.length>120000){res.statusCode=413;res.end(JSON.stringify({error:'Solicitud demasiado grande.'}));return;}}
         const body=JSON.parse(raw);
-        const result=await createAiReport({data:body.report,passcode:req.headers['x-geominer-admin-code'],preview:body.preview});
+        const result=await createAiReport({data:body.report,passcode:req.headers['x-geominer-admin-code'],preview:body.preview,question:body.question,userEvidence:body.userEvidence,geoMatches:body.geoMatches});
         res.statusCode=result.status;res.end(JSON.stringify(result.body));
       }catch {res.statusCode=400;res.end(JSON.stringify({error:'Datos JSON inválidos.'}));}
     });

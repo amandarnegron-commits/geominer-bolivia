@@ -62,8 +62,8 @@ test('catálogo acepta red-edge y descarta asset opcional no seguro',()=>{
 test('informe guarda resolución, control y auxiliares sin llamarlos reserva mineral',()=>{
  const result={...makeResult(),requestedMeters:20,cellWidthMeters:20,cellHeightMeters:20,bandsRead:['blue','green','red','nir','swir16','swir22','scl','rededge1','rededge3','nir08']};
  const control=controlAreaComparison(result,result,'W');
- const report=prepareReport({bbox,scene,region:'Cerro Rico',result,control:{...control,bbox:neighbouringBbox(bbox,'W'),sceneId:scene.id}});
- assert.equal(report.version,'0.9');assert.equal(report.grid.cellWidthMeters,20);assert.equal(report.control.direction,'W');
+ const report=prepareReport({bbox,scene,region:'Área GPS',result,control:{...control,bbox:neighbouringBbox(bbox,'W'),sceneId:scene.id}});
+ assert.equal(report.version,'1.1');assert.equal(report.grid.cellWidthMeters,20);assert.equal(report.control.direction,'W');
  assert.ok(report.indices.ferrous.p50>1);
  assert.match(report.disclaimer,/No demuestra/i);
  assert.match(report.methods.join(' '),/Cuadrícula UTM/);

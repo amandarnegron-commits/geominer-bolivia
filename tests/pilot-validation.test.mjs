@@ -39,18 +39,18 @@ test('una señal uniforme en el terreno no se interpreta como persistencia de ho
 });
 
 import { createAiReport } from '../lib/report-api.js';
-import { cerroRicoBbox } from '../src/cerro-rico.js';
+import {squareFromCenter} from '../src/geo.js';
 import { prepareReport } from '../src/report-data.js';
-test('la IA recibe solo contexto bibliográfico y validación numérica sin anotaciones privadas',async()=>{
- const bbox=cerroRicoBbox();
+test('la IA recibe validación numérica sin anotaciones privadas',async()=>{
+ const bbox=squareFromCenter(-63.18,-17.78,1);
  const sample={width:3,height:4,valid:12,total:12,iron:Float32Array.from(Array.from({length:12},(_,i)=>1+i/10)),clay:Float32Array.from(Array.from({length:12},(_,i)=>1+i/20))};
  const scene={id:'scene-primary-2026',date:'2026-11-18T10:00:00Z',platform:'sentinel-2',cloud:2};
- const report=prepareReport({bbox,region:'Potosí',scene,result:sample,temporal:{secondSceneId:'scene-secondary-2026',secondDate:'2026-10-21T10:00:00Z',grid:{total:12,sharedValid:10,sharedPct:83.3},metrics:{iron:{jaccard:0.5,overlapPixels:2,unionPixels:4},clay:{jaccard:0.25,overlapPixels:1,unionPixels:4}}}});
+ const report=prepareReport({bbox,region:'Área GPS',scene,result:sample,temporal:{secondSceneId:'scene-secondary-2026',secondDate:'2026-10-21T10:00:00Z',grid:{total:12,sharedValid:10,sharedPct:83.3},metrics:{iron:{jaccard:0.5,overlapPixels:2,unionPixels:4},clay:{jaccard:0.25,overlapPixels:1,unionPixels:4}}}});
  report.fieldNotes=[{name:'privado',notes:'NO COMPARTIR'}];
  let sent;
  const res=await createAiReport({data:report,passcode:'private-pass',env:{openai_api_key:'test',geominer_admin_code:'private-pass'},transport:async(_url,options)=>{sent=JSON.parse(options.body);return {ok:true,json:async()=>({output:[{content:[{type:'output_text',text:'Informe preliminar'}]}]})}}});
  assert.equal(res.status,200);
- assert.ok(sent.input.includes('USGS 1996'));
+ assert.ok(!sent.input.includes('geologicalDossier'));
  assert.ok(sent.input.includes('0.5'));
  assert.ok(!sent.input.includes('NO COMPARTIR'));
 });

@@ -1,7 +1,6 @@
 import { statsFor, exportTopPoints } from './indices.js';
 import {minimumGroupPixels} from './resolution.js';
 import { detectAnomalyZones } from './anomaly-zones.js';
-import { geologyContextFor } from './cerro-rico.js';
 import { buildEvidenceDecision } from './evidence-decision.js';
 
 const fixed = (n, digits = 4) => Number.isFinite(n) ? Number(n.toFixed(digits)) : null;
@@ -14,14 +13,13 @@ export function prepareReport({ bbox, region, scene, result, temporal=null, cont
   const area = Math.abs((n-s)*111.32*(e-w)*111.32*Math.cos((n+s)*Math.PI/360));
   const iron = statsFor(result.iron), clay = statsFor(result.clay);
   const fraction = result.total ? result.valid / result.total : 0;
-  const geologicalContext=geologyContextFor(bbox);
   const zones={
     iron:detectAnomalyZones(result,bbox,'iron',{minPixels:minimumGroupPixels(result),limit:10}),
     clay:detectAnomalyZones(result,bbox,'clay',{minPixels:minimumGroupPixels(result),limit:10})
   };
-  const decision=buildEvidenceDecision({result,bbox,zones,secondResult,geologicalContext});
+  const decision=buildEvidenceDecision({result,bbox,zones,secondResult});
   return {
-    version: '0.9',
+    version: '1.1',
     decision,
     generatedAt: new Date().toISOString(),
     region: String(region || 'Bolivia').slice(0,80),
@@ -43,7 +41,6 @@ export function prepareReport({ bbox, region, scene, result, temporal=null, cont
       ferrous: result.ferrous?{formula:'B11/B8A',...Object.fromEntries(['p50','p75','p90'].map(k=>[k,fixed(statsFor(result.ferrous)[k])]))}:null,
       rededge: result.rededge?{formula:'B7/B5',...Object.fromEntries(['p50','p75','p90'].map(k=>[k,fixed(statsFor(result.rededge)[k])]))}:null
     },
-    geologicalContext,
     temporal,
     control,
     points: {
@@ -62,7 +59,7 @@ export function prepareReport({ bbox, region, scene, result, temporal=null, cont
       `Sectores = agrupaciones de al menos ${minimumGroupPixels(result)} píxeles vecinos (8 conexiones) con índice >= P90; criterio de área mínima exploratoria ~1200 m2.`,
       'Los sectores son coordenadas indicativas calculadas con proyección UTM y remuestreo; no puntos GPS medidos ni zonas comprobadas.',
       'Comparación de un área vecina NO es ensayo controlado: relieve, escombreras, humedad, vegetación y geología pueden diferir.',
-      'Las capas SERGEOMIN/GeoBolivia son regionales y están sujetas a disponibilidad externa; NO se hizo intersección espacial automatizada.'
+      'Las capas SERGEOMIN/GeoBolivia son regionales y están sujetas a disponibilidad externa; NO se hizo intersección espacial automatizada.',
     ],
     disclaimer: 'Estudio orientativo sin validación de campo. No demuestra presencia, tipo, ley, cantidad, profundidad, valor económico ni derechos mineros.'
   };

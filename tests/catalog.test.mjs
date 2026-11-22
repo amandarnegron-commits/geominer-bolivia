@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { normalizeBbox, searchSentinel } from '../lib/catalog.js';
 
-test('normaliza un área válida en Potosí', () => {
+test('normaliza un área válida en ubicación elegida', () => {
   const out = normalizeBbox('-65.76,-19.58,-65.74,-19.56');
   assert.equal(out.bbox.length, 4);
   assert.ok(out.areaKm2 > 0);

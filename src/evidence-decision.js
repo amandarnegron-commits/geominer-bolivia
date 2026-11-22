@@ -33,7 +33,7 @@ function localAbove(values, threshold, center, width,height, radius=1) {
   return {state:valid===0?'sin_datos':hits>0?'si':'no',hits,valid};
 }
 
-export function buildEvidenceDecision({result,bbox,zones,secondResult=null,geologicalContext=null}) {
+export function buildEvidenceDecision({result,bbox,zones,secondResult=null}) {
   if(!result || !Array.isArray(bbox) || bbox.length!==4 || !result.width || !result.height) return null;
   const quality=result.total?result.valid/result.total:0;
   const comparable=validGrid(result,secondResult);
@@ -70,7 +70,6 @@ export function buildEvidenceDecision({result,bbox,zones,secondResult=null,geolo
     reportedZones:totalZones,
     usablePct:round(quality*100,1),
     temporalAvailable:comparable,
-    districtEvidence:geologicalContext?'SÍ: mineralización histórica documentada en el distrito (fuentes externas), no en cada sector':'No se incorporaron pruebas geológicas independientes para el terreno',
     mineralAnswer:'NO DETERMINADO: las bandas actuales no prueban minerales específicos en los sectores',
     economicAnswer:'NO EVALUABLE: sin ensayos, leyes, volúmenes, continuidad ni costos de extracción',
     priorityMethod:'Alta: vecindad P90 en ambos indices y en otra fecha; Media: una corroboracion; Inicial: un solo indice; Por verificar: menos del 30% de pixeles utiles. Prioridad de REVISION REMOTA, no probabilidad de mineral.',

@@ -4,7 +4,7 @@ import { prepareReport } from '../src/report-data.js';
 import { createAiReport,extractAnswer } from '../lib/report-api.js';
 
 const sampleResult={width:2,height:2,valid:4,total:4,iron:Float32Array.from([1,1.5,2,2.5]),clay:Float32Array.from([1,1.1,1.2,1.3])};
-const data=prepareReport({bbox:[-65.78,-19.60,-65.76,-19.58],region:'Potosí',scene:{id:'sentinel-2-2026-11-18',date:'2026-11-18T12:00:00Z',platform:'sentinel-2b',cloud:2},result:sampleResult});
+const data=prepareReport({bbox:[-65.78,-19.60,-65.76,-19.58],region:'Área GPS',scene:{id:'sentinel-2-2026-11-18',date:'2026-11-18T12:00:00Z',platform:'sentinel-2b',cloud:2},result:sampleResult});
 test('informe numérico conserva datos observados, coordenadas y limitaciones',()=>{assert.equal(data.scene.cloudPct,2);assert.equal(data.grid.validPixels,4);assert.ok(data.indices.iron.p90>=data.indices.iron.p75);assert.equal(data.points.iron.length,1);assert.match(data.disclaimer,/No demuestra/i);});
 test('sin configuración API no se hacen llamadas facturables',async()=>{const r=await createAiReport({data,passcode:'demo',env:{},transport:()=>{throw Error('no llamar')}});assert.equal(r.status,503);});
 test('clave incorrecta bloquea llamadas externas',async()=>{let calls=0;const r=await createAiReport({data,passcode:'wrong',env:{OPENAI_API_KEY:'test',GEOMINER_ADMIN_CODE:'admin-secret'},transport:()=>{calls++;}});assert.equal(r.status,401);assert.equal(calls,0);});
