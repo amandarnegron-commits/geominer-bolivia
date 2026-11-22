@@ -15,7 +15,7 @@ const env={openai_api_key:'token',geominer_admin_code:'secreto'};
 const response=async()=>({ok:true,json:async()=>({output:[{content:[{type:'output_text',text:'Se observaron sectores de respuesta alta.'}]}]})});
 
 test('informe es general para cualquier GPS, sin contexto geológico automático',()=>{
- assert.equal(report.version,'1.1');
+ assert.equal(report.version,'1.2');
  assert.ok(!Object.hasOwn(report,'geologicalDossier'));
  assert.ok(!Object.hasOwn(report,'geologicalContext'));
  assert.ok(!Object.hasOwn(report.decision,'districtEvidence'));

@@ -3,15 +3,16 @@ import react from '@vitejs/plugin-react';
 import { searchSentinel } from './lib/catalog.js';
 import { searchAnalysisScenes } from './lib/analysis-catalog.js';
 import { createAiReport } from './lib/report-api.js';
+import { researchArea, researchAccess } from './lib/auto-research.js';
 
 // APIs con el mismo endpoint en localhost y en funciones Vercel.
 function localApi(){
   return {name:'geominer-local-api',configureServer(server){
-    for(const [path,fn] of [['/api/sentinel',searchSentinel],['/api/analysis-scenes',searchAnalysisScenes]]){
+    for(const [path,fn] of [['/api/sentinel',searchSentinel],['/api/analysis-scenes',searchAnalysisScenes],['/api/auto-research',researchArea]]){
       server.middlewares.use(path,async(req,res,next)=>{
         if(req.method!=='GET')return next();
         res.setHeader('Content-Type','application/json; charset=utf-8');
-        try{const url=new URL(req.url,'http://localhost');const data=await fn(url.searchParams.get('bbox'));res.statusCode=200;res.end(JSON.stringify(data));}
+        try{if(path==='/api/auto-research' && (process.env.GEOMINER_ADMIN_CODE||process.env.geominer_admin_code)){const denied=researchAccess(req.headers['x-geominer-admin-code']);if(denied){res.statusCode=denied.status;res.end(JSON.stringify({error:denied.error}));return;}}const url=new URL(req.url,'http://localhost');const data=await fn(url.searchParams.get('bbox'));res.statusCode=200;res.end(JSON.stringify(data));}
         catch(err){const msg=err?.message||'Servicio no disponible';res.statusCode=/selecciona|terreno|esquinas|límite|válidos|pequeño|hasta 25/i.test(msg)?400:503;res.end(JSON.stringify({error:msg}));}
       });
     }
@@ -21,9 +22,9 @@ function localApi(){
       res.setHeader('Cache-Control','no-store');
       let raw='';
       try {
-        for await (const chunk of req) {raw+=chunk.toString();if(raw.length>120000){res.statusCode=413;res.end(JSON.stringify({error:'Solicitud demasiado grande.'}));return;}}
+        for await (const chunk of req) {raw+=chunk.toString();if(raw.length>400000){res.statusCode=413;res.end(JSON.stringify({error:'Solicitud demasiado grande.'}));return;}}
         const body=JSON.parse(raw);
-        const result=await createAiReport({data:body.report,passcode:req.headers['x-geominer-admin-code'],preview:body.preview,question:body.question,userEvidence:body.userEvidence,geoMatches:body.geoMatches});
+        const result=await createAiReport({data:body.report,passcode:req.headers['x-geominer-admin-code'],preview:body.preview,question:body.question,userEvidence:body.userEvidence,geoMatches:body.geoMatches,geologyPlates:body.geologyPlates,geologyImages:body.geologyImages});
         res.statusCode=result.status;res.end(JSON.stringify(result.body));
       }catch {res.statusCode=400;res.end(JSON.stringify({error:'Datos JSON inválidos.'}));}
     });

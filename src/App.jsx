@@ -14,6 +14,8 @@ import { compareSpectralResults, FIELD_STATUSES, noteKey, normalizeFieldNote, ex
 import { neighbouringBbox, controlAreaComparison } from './control-area.js';
 import { falseColorRGBA } from './false-color.js';
 import { minimumGroupPixels } from './resolution.js';
+import { GEO_PLATE_TYPES, reportPlateManifest } from './geological-study.js';
+import { createGeologyMapImage } from './geological-map.js';
 import {
   Satellite, MapPinned, Layers3, Map, Search, Compass, Mountain, Waves,
   Crosshair, ScanLine, Database, FileText, ChevronDown, ExternalLink,
@@ -84,6 +86,11 @@ export default function App() {
   const [aiError, setAiError] = useState('');
   const [adminCode, setAdminCode] = useState('');
   const [aiPreview,setAiPreview] = useState(false);
+  const [geologyPlates,setGeologyPlates] = useState([]);
+  const [autoResearch,setAutoResearch] = useState(null);
+  const [researchBusy,setResearchBusy] = useState(false);
+  const [researchError,setResearchError] = useState('');
+  const [plateError,setPlateError] = useState('');
   const [geologistQuestion,setGeologistQuestion] = useState('');
   const [geologyEvidence,setGeologyEvidence] = useState(readGeologyEvidence);
   const [geoEvidenceType,setGeoEvidenceType] = useState('mapa_geologico');
@@ -92,6 +99,7 @@ export default function App() {
   const [geoEvidenceSector,setGeoEvidenceSector] = useState('');
   const [geoEvidenceError,setGeoEvidenceError] = useState('');
   const [importedGeoMap,setImportedGeoMap] = useState(null);
+  const [importedGeoAreaKey,setImportedGeoAreaKey] = useState('');
   const [importedGeoSource,setImportedGeoSource] = useState('');
   const [importGeoError,setImportGeoError] = useState('');
   const [indicator, setIndicator] = useState('iron');
@@ -120,10 +128,11 @@ export default function App() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [saved, setSaved] = useState(readSaved);
-  const [activeTab, setActiveTab] = useState('scenes');
+  const [activeTab, setActiveTab] = useState('analysis');
   const [mobilePanel, setMobilePanel] = useState(false);
   const area = useMemo(() => areaOf(bbox), [bbox]);
   const activeGeologyEvidence = useMemo(() => geologyEvidence.filter(x=>x.areaKey===areaEvidenceKey(bbox)),[geologyEvidence,bbox]);
+  const activePlates=useMemo(()=>geologyPlates.filter(p=>p.areaKey===areaEvidenceKey(bbox)),[geologyPlates,bbox]);
   const visibleScenes = useMemo(() => (scenes?.scenes || []).filter(s => s.cloud !== null && s.cloud <= Number(cloudMax)), [scenes, cloudMax]);
   const temporalComparison=useMemo(()=>analysisResult&&compareOutput?.result ? compareSpectralResults(analysisResult,compareOutput.result):null,[analysisResult,compareOutput]);
   const activeAreaNotes=useMemo(()=>{
@@ -144,8 +153,12 @@ export default function App() {
     control:controlSummary&&controlResult?{...controlSummary,bbox:controlResult.bbox,date:analysisScene.date,sceneId:analysisScene.id}:null,
     secondResult:compareOutput?.result||null
   }):null,[analysisResult,bbox,analysisScene,city,temporalComparison,compareOutput,controlSummary,controlResult]);
-  const geoMatches=useMemo(()=>importedGeoMap&&preparedReport?.zones?
-    matchGeologyToSectors(importedGeoMap,preparedReport.zones,importedGeoSource):[],[importedGeoMap,preparedReport,importedGeoSource]);
+  const activeGeoMap=useMemo(()=>importedGeoAreaKey===areaEvidenceKey(bbox)?importedGeoMap:null,[importedGeoMap,importedGeoAreaKey,bbox]);
+  const autoGeoMap=autoResearch?.services?.geology?.status==='ok'?autoResearch.services.geology.features:null;
+  const autoGeoMatches=useMemo(()=>autoGeoMap&&preparedReport?.zones?matchGeologyToSectors(autoGeoMap,preparedReport.zones,'GeoBolivia/SERGEOTECMIN, mapa nacional 2000'):[],[autoGeoMap,preparedReport]);
+  const geoMatches=useMemo(()=>activeGeoMap&&preparedReport?.zones?
+    matchGeologyToSectors(activeGeoMap,preparedReport.zones,importedGeoSource):[],[activeGeoMap,preparedReport,importedGeoSource]);
+  const studyManifest=useMemo(()=>reportPlateManifest({plates:activePlates,geoMatches,evidence:activeGeologyEvidence,fieldNotes:activeAreaNotes}),[activePlates,geoMatches,activeGeologyEvidence,activeAreaNotes]);
   async function uploadGeologyGeoJSON(event){
     const file=event.target.files?.[0];
     event.target.value='';
@@ -153,12 +166,37 @@ export default function App() {
     setImportGeoError('');
     if(file.size>3*1024*1024){setImportGeoError('El GeoJSON debe pesar como máximo 3 MB. Recorta al sector en QGIS.');return;}
     try{const parsed=JSON.parse(await file.text());const validated=validateGeologyGeoJSON(parsed);
-      setImportedGeoMap(validated);setImportedGeoSource(file.name.slice(0,170));setAiText('');setAiUsage(null);
+      setImportedGeoMap(validated);setImportedGeoAreaKey(areaEvidenceKey(bbox));setImportedGeoSource(file.name.slice(0,170));setAiText('');setAiUsage(null);
     }catch(e){setImportGeoError(e?.message||'GeoJSON inválido.');}
+  }
+  useEffect(()=>{
+    const instance=map.current;if(!instance)return;
+    const sync=()=>{
+      if(!instance.isStyleLoaded())return;
+      if(!instance.getSource('local-geology')){
+        instance.addSource('local-geology',{type:'geojson',data:{type:'FeatureCollection',features:[]}});
+        instance.addLayer({id:'local-geology-fill',type:'fill',source:'local-geology',paint:{'fill-color':'#d98452','fill-opacity':0.23,'fill-outline-color':'#984c41'}});
+        instance.addLayer({id:'local-geology-border',type:'line',source:'local-geology',paint:{'line-color':'#834e51','line-width':1.3}});
+      }
+      instance.getSource('local-geology').setData(activeGeoMap||{type:'FeatureCollection',features:[]});
+    };
+    if(instance.isStyleLoaded())sync();else instance.once('load',sync);
+  },[activeGeoMap]);
+  async function investigateArea(){
+    if(!bbox||area<0.01||area>25.02){setResearchError('Selecciona un área GPS de hasta 25 km².');return;}
+    if(!adminCode.trim()){setResearchError('Ingresa tu código privado de GeoMiner para consultar los servicios.');return;}
+    setResearchBusy(true);setResearchError('');setAutoResearch(null);
+    try{
+      const response=await fetch('/api/auto-research?bbox='+encodeURIComponent(bbox.join(',')),{headers:{'x-geominer-admin-code':adminCode}});
+      const payload=await response.json();
+      if(!response.ok)throw new Error(payload.error||'Los servicios geológicos no respondieron.');
+      setAutoResearch(payload);setAiText('');setAiUsage(null);
+    }catch(err){setResearchError(err.message||'Error consultando fuentes geológicas');}
+    finally{setResearchBusy(false);}
   }
   function clearSpectral() {
     abortAnalysis.current?.abort();
-    setGeologistQuestion('');
+    setGeologistQuestion('');setAutoResearch(null);setResearchBusy(false);setResearchError('');
     setCompareOutput(null);setCompareSceneId('');setCompareError('');setCompareLoading(false);setNoteText('');
     setControlResult(null);setControlBusy(false);setControlError('');setSpectralView('indices');
     setAnalysisResult(null);setHeatmapUrl(null);setAnalysisScenes(null);setAnalysisScene(null);setSelectedZoneId(null);
@@ -249,6 +287,27 @@ export default function App() {
     };
     if(instance.isStyleLoaded())display();else instance.once('load',display);
   },[showRelief,showGeology,showFaults]);
+
+  // Capas vectoriales oficiales consultadas para este terreno; no se crean unidades artificiales.
+  useEffect(()=>{
+    const instance=map.current;if(!instance)return;
+    const update=()=>{
+      const shapes=[
+        ['auto-geo-units','geology','fill','#b88649'],
+        ['auto-geo-faults','faults','line','#d82c38'],
+        ['auto-geo-anticlines','anticlines','line','#4b68a2'],
+        ['auto-geo-synclines','synclines','line','#7953a3']
+      ];
+      for(const [id,key,type,color] of shapes){
+        const data=autoResearch?.services?.[key]?.features||{type:'FeatureCollection',features:[]};
+        if(!instance.getSource(id)){
+          instance.addSource(id,{type:'geojson',data});
+          instance.addLayer({id,type,source:id,paint:type==='fill'?{'fill-color':['coalesce',['get','geominerColor'],color],'fill-opacity':0.43,'fill-outline-color':color}:{'line-color':color,'line-width':2.2,'line-opacity':0.85}},instance.getLayer('area-border')?'area-border':undefined);
+        }else instance.getSource(id).setData(data);
+      }
+    };
+    if(instance.isStyleLoaded())update();else instance.once('load',update);
+  },[autoResearch]);
 
   // Geo-referenciamos aproximadamente la cuadrícula del análisis en el terreno elegido.
   useEffect(() => {
@@ -419,6 +478,44 @@ export default function App() {
     if(preview.length>80000)throw new Error('Miniatura demasiado grande; prueba sin imagen.');
     return preview;
   }
+  async function uploadStudyPlates(event){
+    const files=Array.from(event.target.files||[]);event.target.value='';setPlateError('');
+    if(!bbox){setPlateError('Selecciona primero el área GPS de estas láminas.');return;}
+    if(files.length+activePlates.length>6){setPlateError('Máximo 6 láminas por área. Elimina alguna antes de agregar otras.');return;}
+    const imported=[];
+    try{
+      for(const file of files){
+        if(!['image/png','image/jpeg','image/webp'].includes(file.type)||file.size>8*1024*1024)
+          throw new Error('Utiliza imágenes PNG/JPEG/WebP de hasta 8 MB cada una.');
+        const src=URL.createObjectURL(file);
+        try{
+          const im=await new Promise((resolve,reject)=>{const image=new window.Image();image.onload=()=>resolve(image);image.onerror=()=>reject(new Error('No se pudo leer '+file.name));image.src=src;});
+          const canvas=document.createElement('canvas');const scale=Math.min(1,1600/Math.max(im.naturalWidth,im.naturalHeight));
+          canvas.width=Math.max(1,Math.round(im.naturalWidth*scale));canvas.height=Math.max(1,Math.round(im.naturalHeight*scale));
+          canvas.getContext('2d').drawImage(im,0,0,canvas.width,canvas.height);
+          const imageData=canvas.toDataURL('image/jpeg',0.82);
+          const preview=document.createElement('canvas');const factor=Math.min(1,700/Math.max(im.naturalWidth,im.naturalHeight));
+          preview.width=Math.max(1,Math.round(im.naturalWidth*factor));preview.height=Math.max(1,Math.round(im.naturalHeight*factor));
+          preview.getContext('2d').drawImage(im,0,0,preview.width,preview.height);
+          let aiImageData=preview.toDataURL('image/jpeg',0.55);
+          if(aiImageData.length>110000){
+            const tiny=document.createElement('canvas');const t=Math.min(1,480/Math.max(im.naturalWidth,im.naturalHeight));
+            tiny.width=Math.max(1,Math.round(im.naturalWidth*t));tiny.height=Math.max(1,Math.round(im.naturalHeight*t));
+            tiny.getContext('2d').drawImage(im,0,0,tiny.width,tiny.height);aiImageData=tiny.toDataURL('image/jpeg',0.48);
+          }
+          imported.push({id:Date.now()+'-'+Math.random().toString(36).slice(2,8),areaKey:areaEvidenceKey(bbox),
+            kind:'mapa',title:file.name.slice(0,130),source:'',scale:'',notes:'',imageData,aiImageData,
+            width:canvas.width,height:canvas.height,selectedForAi:false});
+        }finally{URL.revokeObjectURL(src);}
+      }
+      setGeologyPlates(prev=>[...prev,...imported]);setAiText('');
+    }catch(err){setPlateError(err.message||'No se pudieron cargar las láminas.');}
+  }
+  function changePlate(id,patch){
+    if(patch.selectedForAi===true&&activePlates.filter(p=>p.selectedForAi).length>=2){setPlateError('Selecciona como máximo dos láminas para OpenAI. Desmarca una antes de continuar.');return;}
+    setPlateError('');setGeologyPlates(prev=>prev.map(p=>p.id===id?{...p,...patch}:p));setAiText('');
+  }
+  function removePlate(id){setGeologyPlates(prev=>prev.filter(p=>p.id!==id));setAiText('');}
   function addGeologyEvidence(){
     setGeoEvidenceError('');
     if(!bbox){setGeoEvidenceError('Selecciona antes el terreno del documento.');return;}
@@ -445,7 +542,7 @@ export default function App() {
       const response=await fetch('/api/ai-report',{
         method:'POST',
         headers:{'Content-Type':'application/json','x-geominer-admin-code':adminCode},
-        body:JSON.stringify({report:preparedReport,preview:aiPreview?makeAiThumbnail():null,question:geologistQuestion.trim(),userEvidence:activeGeologyEvidence,geoMatches})
+        body:JSON.stringify({report:preparedReport,autoResearch:autoResearch?{services:Object.fromEntries(Object.entries(autoResearch.services).map(([k,v])=>[k,{status:v.status,count:v.count,items:v.items,properties:v.features?.features?.slice(0,12).map(f=>f.properties)}])),queriedAt:autoResearch.queriedAt}:null,preview:aiPreview?makeAiThumbnail():null,question:geologistQuestion.trim(),userEvidence:activeGeologyEvidence,geoMatches,geologyPlates:studyManifest.plates,geologyImages:activePlates.filter(p=>p.selectedForAi).slice(0,2).map(p=>({kind:p.kind,title:p.title,source:p.source,image:p.aiImageData}))})
       });
       const payload=await response.json();
       if(!response.ok)throw new Error(payload.error||'Error conectando con OpenAI.');
@@ -455,7 +552,7 @@ export default function App() {
   }
   function downloadPdf() {
     if(!preparedReport)return;
-    try{downloadReportPdf(preparedReport,{aiText,heatmapUrl,indicator,validation:temporalComparison?{firstDate:analysisScene?.date,secondDate:compareOutput?.scene?.date,...temporalComparison}:null,fieldNotes:activeAreaNotes,geologyEvidence:activeGeologyEvidence,geoMatches});setAiError('');}
+    try{downloadReportPdf(preparedReport,{aiText,heatmapUrl,indicator,validation:temporalComparison?{firstDate:analysisScene?.date,secondDate:compareOutput?.scene?.date,...temporalComparison}:null,fieldNotes:activeAreaNotes,geologyEvidence:activeGeologyEvidence,geoMatches,autoResearch,autoGeoMatches,studyPlates:activePlates,studyManifest,geologyMapPng:activeGeoMap?createGeologyMapImage(activeGeoMap,bbox,geoMatches):null,autoGeologyMapPng:autoGeoMap?.features?.length?createGeologyMapImage(autoGeoMap,bbox,autoGeoMatches,{origin:'public'}):null});setAiError('');}
     catch(err){setAiError('No se pudo generar el PDF: '+(err?.message||'error desconocido'));}
   }
   function useGPS() {
@@ -466,17 +563,7 @@ export default function App() {
       setCity('Área GPS');setActiveTab('analysis');
       map.current?.fitBounds([[b[0],b[1]],[b[2],b[3]]],{padding:80,maxZoom:14,duration:650});
       setMobilePanel(false);
-    } catch (err) { setError(err.message); setActiveTab('scenes'); }
-  }
-  function applyGpsPaste(){
-    try{
-      const {lat,lon}=parseGpsPair(gpsPairText);
-      const b=squareFromCenter(lon,lat,gpsSide);
-      setGpsLat(String(lat));setGpsLon(String(lon));setCity('Área GPS');
-      firstCorner.current=null;setStartPoint(null);clearSpectral();setBbox(b);setScenes(null);setError('');
-      setActiveTab('analysis');setMobilePanel(false);
-      map.current?.fitBounds([[b[0],b[1]],[b[2],b[3]]],{padding:80,maxZoom:14,duration:650});
-    }catch(err){setError(err.message);setActiveTab('scenes');}
+    } catch (err) { setError(err.message); setActiveTab('analysis'); }
   }
   function downloadSectorCsv(){
     if(!preparedReport)return;
@@ -546,71 +633,36 @@ export default function App() {
           <button className="icon-button mobile-close" aria-label="Cerrar menú" onClick={()=>setMobilePanel(false)}><X size={18}/></button>
         </div>
         <div className="sidebar-content">
-          <div className="section-cap">PLATAFORMA</div>
-          <div className="nav-active"><MapPinned size={18}/><span>Explorador satelital</span><span className="nav-dot"/></div>
-          <button type="button" className="nav-active spectral-nav" onClick={()=>{setActiveTab('geology');setMobilePanel(false);}}><Mountain size={18}/><span>Geología por coordenadas</span><span className="nav-dot"/></button>
-          <button type="button" className="nav-active spectral-nav" onClick={()=>{setActiveTab('analysis');setMobilePanel(false);}}><Layers3 size={18}/><span>Índices espectrales</span><span className="nav-dot"/></button>
-          <button type="button" className="nav-active spectral-nav" onClick={()=>{setActiveTab('anomalies');setMobilePanel(false);}}><MapPinned size={18}/><span>Sectores de interés</span><span className="nav-dot"/></button>
-          <button type="button" className="nav-active spectral-nav" onClick={()=>{setActiveTab('validation');setMobilePanel(false);}}><CheckCircle2 size={18}/><span>Validación de escenas</span><span className="nav-dot"/></button>
-          <button type="button" className="nav-active spectral-nav" onClick={()=>{setActiveTab('report');setMobilePanel(false);}}><FileText size={18}/><span>Informes PDF e IA</span><span className="nav-dot"/></button>
-          <div className="sidebar-divider"/>
-          <div className="sidebar-card pilot-shortcut">
-            <div className="caption-label"><Crosshair size={15}/> Explora cualquier coordenada</div>
-            <strong>La ubicación la decides tú</strong>
-            <p>Ingresa coordenadas WGS84 o delimita un terreno en el mapa. El análisis usará únicamente la ubicación seleccionada.</p>
-          </div>
-          <div className="section-cap">ZONA DE TRABAJO</div>
-          <div className="sidebar-card">
-            <div className="caption-label"><Crosshair size={15}/> Elegir región</div>
-            <div className="city-picker">
-              <select aria-label="Región" value={city} onChange={e=>{const c=CITIES.find(x=>x.name===e.target.value);if(c)goCity(c);else setCity(e.target.value);}}>
-                <option value="Área GPS">Coordenadas libres</option>
-                <option value="Área en mapa">Área dibujada</option>
-                {CITIES.map(c=><option key={c.name}>{c.name}</option>)}
-              </select>
-              <ChevronDown size={17}/>
-            </div>
-            <div className="help-steps">
-              <div><span>1</span>Haz clic en la primera esquina del terreno.</div>
-              <div><span>2</span>Haz clic en la esquina opuesta.</div>
-              <div><span>3</span>Consulta escenas satelitales reales.</div>
-            </div>
-          </div>
+          <div className="section-cap">COORDENADAS DEL ESTUDIO</div>
+
           <div className="sidebar-card gps-card">
             <div className="caption-label"><LocateFixed size={15}/> Buscar área por coordenadas</div>
             <label className="gps-paste">Pega latitud, longitud (WGS84)
-              <input type="text" value={gpsPairText} onChange={e=>setGpsPairText(e.target.value)} placeholder="Ej.: -17.7800, -63.1800"/>
+              <input type="text" value={gpsPairText} onChange={e=>{const v=e.target.value;setGpsPairText(v);setError('');try{const {lat,lon}=parseGpsPair(v);setGpsLat(String(lat));setGpsLon(String(lon));}catch{if(v.trim()){setGpsLat('');setGpsLon('');}}}} placeholder="Ej.: -17.7800, -63.1800"/>
             </label>
-            <button type="button" className="spectral-export" onClick={applyGpsPaste}>Ubicar punto y delimitar área</button>
             <div className="gps-fields">
               <label>Latitud <input type="number" step="any" value={gpsLat} onChange={e=>setGpsLat(e.target.value)} /></label>
               <label>Longitud <input type="number" step="any" value={gpsLon} onChange={e=>setGpsLon(e.target.value)} /></label>
             </div>
             <div className="gps-actions"><label>Lado del terreno
-              <select value={gpsSide} onChange={e=>setGpsSide(e.target.value)}><option value="1">1 km</option><option value="5">5 km</option><option value="10">10 km</option><option value="20">20 km</option><option value="40">40 km</option></select>
-            </label><button onClick={useGPS}><LocateFixed size={15}/> Usar estos valores</button></div>
+              <select value={gpsSide} onChange={e=>setGpsSide(e.target.value)}><option value="1">1 km</option><option value="2">2 km</option><option value="3">3 km</option><option value="5">5 km</option></select>
+            </label><button onClick={useGPS}><LocateFixed size={15}/> Ubicar área</button></div>
+            {error&&<div role="alert" className="gps-error">{error}</div>}
           </div>
           <div className="sidebar-card faint">
             <div className="caption-label"><ScanLine size={15}/> Área seleccionada</div>
             <div className="area-value">{bbox?fmt(area):'0'} <span>km²</span></div>
             <div className="area-sub">{startPoint?'Primera esquina marcada: selecciona la segunda.':bbox?'Terreno delimitado correctamente.':'Sin área seleccionada'}</div>
             {bbox&&<div className="coords-mini">{bbox.map(n=>n.toFixed(4)).join(' · ')}</div>}
-            {bbox&&<div className="export-actions"><button onClick={()=>downloadArea('geojson')}><Download size={14}/> GeoJSON</button><button onClick={()=>downloadArea('kml')}><Download size={14}/> KML</button></div>}
-            <div className="actions-inline">
-              <button onClick={reset} className="ghost-btn" disabled={!bbox&&!startPoint}><RefreshCcw size={14}/> Limpiar</button>
-              <button onClick={saveArea} className="ghost-btn" disabled={!bbox}><BookmarkPlus size={14}/> Guardar</button>
-            </div>
+            <details className="secondary-tools"><summary>Opciones de área</summary>
+              {bbox&&<div className="export-actions"><button onClick={()=>downloadArea('geojson')}><Download size={14}/> GeoJSON</button><button onClick={()=>downloadArea('kml')}><Download size={14}/> KML</button></div>}
+              <div className="actions-inline"><button onClick={reset} className="ghost-btn" disabled={!bbox&&!startPoint}><RefreshCcw size={14}/> Limpiar</button><button onClick={saveArea} className="ghost-btn" disabled={!bbox}><BookmarkPlus size={14}/> Guardar</button></div>
+              <button type="button" className="ghost-btn secondary-full" onClick={()=>{setActiveTab('saved');setMobilePanel(false);}}>Áreas guardadas ({saved.length})</button>
+            </details>
           </div>
-          <button onClick={searchScenes} className="run-btn" disabled={busy||!bbox||area<.01||area>2500}>
-            {busy?<LoaderCircle className="spin" size={18}/>:<Satellite size={18}/>}
-            {busy?'Buscando imágenes…':'Buscar imágenes Sentinel-2'}
-          </button>
-          <button type="button" className="run-btn analysis-run" onClick={findAnalysisScenes} disabled={analysisBusy||!bbox||area<0.01||area>25.01}>
-            <Layers3 size={17}/> Buscar datos para análisis
-          </button>
           <div className="limit-note"><Info size={14}/><span>Hasta 25 km² para análisis multiespectral gratuito. Los índices no identifican yacimientos.</span></div>
         </div>
-        <div className="sidebar-foot"><span className="live-dot"/> GeoMiner v1.1 <span className="foot-right">PROTOTIPO</span></div>
+        <div className="sidebar-foot"><span className="live-dot"/> GeoMiner v1.3 <span className="foot-right">PROTOTIPO</span></div>
       </aside>
       <main className="main-area">
         <header className="topbar">
@@ -620,7 +672,7 @@ export default function App() {
           </div>
           <div className="topbar-meta">
             <span className="state-pill"><span className="live-dot"/> Catálogo Copernicus</span>
-            <span className="v-tag">Beta 1.1</span>
+            <span className="v-tag">Beta 1.2</span>
           </div>
         </header>
         <section className="work-area">
@@ -637,7 +689,7 @@ export default function App() {
               {analysisResult&&zones.length>0&&<div className="anomaly-map-count">{zones.length} sectores P90+ · {INDICATORS[indicator].formula} · <button type="button" onClick={()=>setActiveTab('anomalies')}>Inspeccionar</button></div>}
               {cursor&&<div className="coordinates">LAT {cursor[0]} · LON {cursor[1]}</div>}
             </div>
-            <div className="map-layer-controls"><label><input type="checkbox" checked={showRelief} onChange={e=>setShowRelief(e.target.checked)}/> Relieve DEM</label><label><input type="checkbox" checked={showGeology} onChange={e=>setShowGeology(e.target.checked)}/> Geología (WMS)</label><label><input type="checkbox" checked={showFaults} onChange={e=>setShowFaults(e.target.checked)}/> Fallas regionales</label><small>Capas cartográficas externas, no validadas por GeoMiner. Si el servidor WMS falla, desactívalas. Geología nacional a escala general.</small></div>
+            <details className="map-layer-controls secondary-tools"><summary>Capas de referencia (relieve, geología y fallas)</summary><label><input type="checkbox" checked={showRelief} onChange={e=>setShowRelief(e.target.checked)}/> Relieve DEM</label><label><input type="checkbox" checked={showGeology} onChange={e=>setShowGeology(e.target.checked)}/> Geología (WMS)</label><label><input type="checkbox" checked={showFaults} onChange={e=>setShowFaults(e.target.checked)}/> Fallas regionales</label><small>Capas cartográficas externas, no validadas por GeoMiner. Si el servidor WMS falla, desactívalas. Geología nacional a escala general.</small></details>
             <div className="map-bottom">
               <div><Info size={16}/><span>Los límites dibujados son aproximados; no equivalen a derechos mineros ni catastros oficiales.</span></div>
               <span>{baseLayer==='historical'?'Sentinel-2 2016 © EOX, CC BY 4.0':'OpenStreetMap'}</span>
@@ -649,28 +701,72 @@ export default function App() {
               <div className="inspector-icon"><Satellite size={20}/></div>
             </div>
             <div className="inspector-tabs">
-              <button onClick={()=>setActiveTab('geology')} className={activeTab==='geology'?'selected':''}>Geología GPS</button>
-              <button onClick={()=>setActiveTab('scenes')} className={activeTab==='scenes'?'selected':''}>Imágenes</button>
               <button onClick={()=>setActiveTab('analysis')} className={activeTab==='analysis'?'selected':''}>Análisis</button>
+              <button onClick={()=>setActiveTab('geology')} className={activeTab==='geology'?'selected':''}>Estudio geológico</button>
               <button onClick={()=>setActiveTab('anomalies')} className={activeTab==='anomalies'?'selected':''}>Sectores</button>
-              <button onClick={()=>setActiveTab('validation')} className={activeTab==='validation'?'selected':''}>Validar</button>
               <button onClick={()=>setActiveTab('report')} className={activeTab==='report'?'selected':''}>Informe</button>
-              <button onClick={()=>setActiveTab('saved')} className={activeTab==='saved'?'selected':''}>Mis áreas <span>{saved.length}</span></button>
             </div>
+            <details className="inspector-secondary secondary-tools"><summary>Herramientas adicionales</summary>
+              <button type="button" onClick={()=>setActiveTab('validation')}>Comparar fechas y terreno vecino</button>
+              <button type="button" onClick={()=>setActiveTab('saved')}>Áreas guardadas ({saved.length})</button>
+            </details>
             {activeTab==='geology' ? (
               <div className="panel-inner pilot-geology">
                 <div className="pilot-heading"><Mountain size={22}/><div><strong>Geología de la ubicación seleccionada</strong><p>Cualquier región de Bolivia: coordenadas, bandas espectrales y mapas que incorpores</p></div></div>
                 <div className="pilot-context-status">{bbox?`Zona de trabajo (O, S, E, N): ${bbox.map(v=>v.toFixed(5)).join(', ')}`:'Primero ingresa coordenadas GPS o delimita un área en el mapa.'}</div>
                 <p>GeoMiner permite explorar respuestas superficiales por coordenadas, contrastar dos fechas y estudiar la litología de cada sector cuando exista cartografía georreferenciada. <strong>No necesita estar cerca de una mina conocida.</strong></p>
-                <p><strong>Documentación geológica:</strong> si tienes una carta de SERGEOMIN u otra fuente autorizada, expórtala como GeoJSON y cárgala abajo. El sistema cruzará sus polígonos con nuestros sectores GPS. Sin esa capa no asignaremos litologías ficticias.</p>
+                <div className="auto-investigation">
+                  <h3>Investigación automática por coordenadas</h3>
+                  <p>Consulta unidades geológicas, fallas, pliegues, relieve y disponibilidad de EnMAP/EMIT en fuentes públicas. Sin documentos que tengas que subir.</p>
+                  <label htmlFor="geo-research-code">Código privado de acceso</label><input id="geo-research-code" type="password" autoComplete="off" value={adminCode} onChange={e=>setAdminCode(e.target.value)} placeholder="El mismo código de los informes IA"/>
+                  <button type="button" className="run-btn" disabled={!bbox||researchBusy||area>25.02} onClick={investigateArea}>{researchBusy?'Consultando servicios…':'Investigar esta zona automáticamente'}</button>
+                  {researchError&&<p className="error-box" role="alert">{researchError}</p>}
+                  {autoResearch&&<div className="auto-research-results">
+                    <p className="auto-research-date">Consulta: {new Date(autoResearch.queriedAt).toLocaleString('es-BO')}</p>
+                    {[['geology','Unidades geológicas'],['faults','Fallas'],['anticlines','Anticlinales'],['synclines','Sinclinales'],['enmap','EnMAP hiperespectral'],['emit','NASA EMIT'],['relief','Perfil topográfico']].map(([key,label])=>{
+                      const entry=autoResearch.services[key];return <div key={key} className="auto-source-item"><strong>{label}</strong><span>{entry.status==='ok'?((entry.count??(entry.points?.length||0))+' registros consultados'):'Servicio no disponible'}</span>{entry.error&&<small>{entry.error}</small>}</div>;
+                    })}
+                    {autoResearch.services.geology?.status==='ok'&&<div className="geologist-import-result"><strong>Mapa geológico público consultado</strong><p>{autoResearch.services.geology.count} entidades devueltas; sus polígonos se muestran sobre el mapa. Fuente: GeoBolivia / SERGEOTECMIN, escala regional.</p>{autoResearch.services.geology.features?.features?.slice(0,12).map((f,i)=><p key={i}>{Object.entries(f.properties||{}).slice(0,4).map(([k,v])=>`${k}: ${v}`).join(' · ')||'Unidad sin atributos descriptivos'}</p>)}{autoGeoMatches.length>0&&<p><strong>{autoGeoMatches.length}</strong> cruces aproximados con sectores calculados; verificar escala y posición.</p>}</div>}
+                    {autoResearch.services.relief?.status==='ok'&&<div className="auto-profile"><strong>Perfil topográfico oeste–este (SRTM ≈90 m)</strong><svg viewBox="0 0 340 125" role="img" aria-label="Perfil de elevaciones aproximadas"><path d={(()=>{const pts=autoResearch.services.relief.points;const min=autoResearch.services.relief.minMeters;const range=Math.max(1,autoResearch.services.relief.maxMeters-min);return pts.filter(p=>p.elevation!=null).map((p,i)=>(i===0?'M':'L')+' '+(12+p.position*315).toFixed(2)+' '+(110-(p.elevation-min)/range*92).toFixed(2)).join(' ')})()} fill="none" stroke="#128773" strokeWidth="2.5"/><path d="M 12 110 L 328 110" stroke="#78929b" strokeWidth="1"/></svg><small>Altitud: {autoResearch.services.relief.minMeters}–{autoResearch.services.relief.maxMeters} m. Es un perfil del relieve, no un corte de rocas subterráneas.</small></div>}
+                    {autoResearch.services.enmap?.items?.length>0&&<details><summary>Escenas EnMAP encontradas ({autoResearch.services.enmap.count})</summary>{autoResearch.services.enmap.items.map(x=><p key={x.id}>{x.date||'Fecha desconocida'} · {x.id}</p>)}</details>}
+                    {autoResearch.services.emit?.items?.length>0&&<details><summary>Escenas EMIT encontradas ({autoResearch.services.emit.count})</summary>{autoResearch.services.emit.items.map(x=><p key={x.id}>{x.date||'Fecha desconocida'} · {x.title}</p>)}</details>}
+                    <small>La búsqueda de escenas no implica que ya se hayan descargado o procesado datos hiperespectrales. Una consulta sin resultados tampoco demuestra ausencia de cobertura histórica.</small>
+                  </div>}
+                </div>
+                <details className="secondary-tools"><summary>Documentación adicional (opcional)</summary>
+                <p>Solo si tienes información especializada georreferenciada que no aparece en los catálogos públicos, puedes adjuntarla como fuente adicional.</p>
+                <div className="study-plates">
+                  <h3>Expediente geológico documental</h3>
+                  <p>Adjunta hasta 6 láminas del área GPS: mapa, travesías, ocurrencias, perfiles, columna estratigráfica o simbología. Se incluirán como anexos en el PDF. <strong>Las imágenes no se georreferencian automáticamente</strong>; su escala y fuente deben registrarse.</p>
+                  <label className="study-upload">Adjuntar láminas JPG / PNG / WebP
+                    <input type="file" accept="image/jpeg,image/png,image/webp" multiple onChange={uploadStudyPlates}/>
+                  </label>
+                  {plateError&&<p role="alert" className="error-box">{plateError}</p>}
+                  {activePlates.map(p=><article className="study-plate-item" key={p.id}>
+                    <img src={p.imageData} alt={'Lámina aportada: '+p.title}/>
+                    <div className="study-plate-fields">
+                      <select aria-label="Tipo de lámina" value={p.kind} onChange={e=>changePlate(p.id,{kind:e.target.value})}>{GEO_PLATE_TYPES.map(t=><option value={t.id} key={t.id}>{t.label}</option>)}</select>
+                      <input aria-label="Título" value={p.title} maxLength={130} onChange={e=>changePlate(p.id,{title:e.target.value})} placeholder="Título de la lámina"/>
+                      <input aria-label="Fuente de la lámina" value={p.source} maxLength={180} onChange={e=>changePlate(p.id,{source:e.target.value})} placeholder="Fuente / institución / año (obligatorio para citar)"/>
+                      <input aria-label="Escala de la lámina" value={p.scale} maxLength={50} onChange={e=>changePlate(p.id,{scale:e.target.value})} placeholder="Escala, p. ej. 1:100.000"/>
+                      <textarea aria-label="Observaciones de la lámina" value={p.notes} maxLength={450} rows={2} onChange={e=>changePlate(p.id,{notes:e.target.value})} placeholder="Descripción o unidades visibles; solo datos respaldados por la imagen"/>
+                      <label className="study-ai-optin"><input type="checkbox" checked={p.selectedForAi} onChange={e=>changePlate(p.id,{selectedForAi:e.target.checked})}/> Enviar esta lámina a OpenAI (máx. 2, con costo de visión)</label>
+                      <button type="button" className="study-remove" onClick={()=>removePlate(p.id)}>Quitar lámina</button>
+                    </div>
+                  </article>)}
+                  <div className="study-progress"><strong>Secciones del expediente</strong>
+                    {studyManifest.sections.map(sec=><div key={sec.id}><span>{sec.title}</span><small>{sec.status}</small></div>)}
+                  </div>
+                  <small>Los archivos permanecen en esta pestaña del navegador y no se guardan en la nube. Solo se remiten a OpenAI las láminas que marques para su revisión visual.</small>
+                </div>
                 <div className="geologist-geospatial">
                   <h3>Importar carta geológica con polígonos GeoJSON</h3>
-                  <p>Exporta desde QGIS o tu fuente autorizada en <strong>WGS84 / EPSG:4326</strong> (longitud, latitud). GeoMiner cruzará el centro de cada sector con los polígonos y leerá atributos como unidad, formación o litología. Tamaño máximo 3 MB; esta capa no se sincroniza ni se sube al servidor.</p>
+                  <p>Exporta desde QGIS o tu fuente autorizada en <strong>WGS84 / EPSG:4326</strong> (longitud, latitud). GeoMiner superpondrá los polígonos en el mapa y los cruzará con el centro de cada sector para leer unidad, formación o litología. Tamaño máximo 3 MB; esta capa no se sincroniza ni se sube al servidor.</p>
                   <input type="file" accept=".geojson,.json,application/geo+json,application/json" aria-label="Cargar GeoJSON geológico local" onChange={uploadGeologyGeoJSON}/>
                   {importGeoError&&<p className="error-box" role="alert">{importGeoError}</p>}
-                  {importedGeoMap&&<div className="geologist-import-result"><strong>Capa importada: {importedGeoSource}</strong><p>{importedGeoMap.features.length} polígonos · {geoMatches.length} sectores intersectados en el análisis actual</p><button type="button" className="spectral-export" onClick={()=>{setImportedGeoMap(null);setImportedGeoSource('');setAiText('');}}>Quitar capa</button>{geoMatches.slice(0,12).map(m=><p key={m.kind+'-'+m.number}>{m.kind==='iron'?'F':'S'}-{m.number}: <strong>{m.unit}</strong> · {m.lithology}</p>)}<small>Procedencia y precisión no verificadas. Una unidad geológica no equivale a mena.</small></div>}
+                  {activeGeoMap&&<div className="geologist-import-result"><strong>Capa importada: {importedGeoSource}</strong><p>{activeGeoMap.features.length} polígonos · {geoMatches.length} sectores intersectados en el análisis actual</p><button type="button" className="spectral-export" onClick={()=>{setImportedGeoMap(null);setImportedGeoAreaKey('');setImportedGeoSource('');setAiText('');}}>Quitar capa</button>{geoMatches.slice(0,12).map(m=><p key={m.kind+'-'+m.number}>{m.kind==='iron'?'F':'S'}-{m.number}: <strong>{m.unit}</strong> · {m.lithology}</p>)}<small>Procedencia y precisión no verificadas. Una unidad geológica no equivale a mena.</small></div>}
                 </div>
-                <div className="geology-evidence-entry">
+                <details className="geology-evidence-entry secondary-tools"><summary>Registrar observaciones, muestras y referencias documentales</summary>
                   <h3>Añadir antecedentes, observaciones y referencias de muestras</h3>
                   <p>Registra documentos existentes que tú aportas. Quedan guardados solamente en ESTE navegador y se enviarán a OpenAI cuando generes una consulta. No se autentican automáticamente.</p>
                   <label htmlFor="geo-evidence-type">Tipo de antecedente</label>
@@ -684,8 +780,9 @@ export default function App() {
                   <button type="button" className="spectral-export" onClick={addGeologyEvidence}><BookmarkPlus size={15}/> Guardar antecedente local</button>
                   {geoEvidenceError&&<p role="alert" className="error-box">{geoEvidenceError}</p>}
                   {activeGeologyEvidence.length>0&&<div className="geologist-evidence-list"><strong>{activeGeologyEvidence.length} antecedentes declarados para esta área</strong>{activeGeologyEvidence.map(item=><article key={item.id} className="geologist-fact"><div><strong>{item.source}</strong><button type="button" className="spectral-export" onClick={()=>removeGeologyEvidence(item.id)}><Trash2 size={14}/> Quitar</button></div><p>{item.description}</p><small>{item.type} · {item.sector?'Sector '+item.sector:'Área general'} · Sin auditoría</small></article>)}</div>}
-                </div>
-                <div className="pilot-source-note">GeoMiner permite consultar WMS geológico regional en el mapa; para cruzar unidades con los sectores, importa polígonos GeoJSON de procedencia conocida. No se obtiene automáticamente un catálogo geológico detallado por coordenadas.</div>
+                </details>
+                </details>
+                <div className="pilot-source-note">Las capas WFS son mapas regionales históricos. La consulta automática no identifica minerales de laboratorio ni permite reconstruir una columna estratigráfica sin datos de edad y formación.</div>
               </div>
             ) : activeTab==='anomalies' ? (
               <div className="panel-inner anomaly-panel">
@@ -766,15 +863,18 @@ export default function App() {
                     <p className="report-notice">Diagnóstico basado en Sentinel-2, sin validación de mineral en laboratorio. El informe PDF es gratuito y no consume tokens de OpenAI.</p>
                     <div className="report-zone-totals"><span>Respuesta férrica: <strong>{preparedReport.zones?.iron?.length??0} sectores</strong></span><span>Respuesta SWIR: <strong>{preparedReport.zones?.clay?.length??0} sectores</strong></span></div>
                     <div className="report-validation-note">{controlSummary?'Contraste con área vecina procesado. ':'Sin control geográfico todavía. '}{temporalComparison ? `Comparación temporal realizada: ${temporalComparison.grid.sharedPct}% de celdas compartidas. Los resultados se incorporarán al PDF.` : 'Comparación temporal pendiente: disponible en «Validar».'} {activeAreaNotes.length} anotaciones locales.</div>
+                    <div className="study-progress"><strong>Estudio geológico · {activePlates.length} láminas</strong>
+                      {studyManifest.sections.map(sec=><div key={sec.id}><span>{sec.title}</span><small>{sec.status}</small></div>)}
+                      <p>El PDF integra anexos e índices; no inventará perfiles ni unidades donde no exista documentación.</p>
+                    </div>
                     <button type="button" className="run-btn pdf-export" onClick={downloadPdf}><Download size={17}/> Descargar informe PDF gratuito</button>
                     <div className="report-ai-section">
                       <div className="caption-label"><Mountain size={17}/> Asistente geológico con OpenAI</div>
-                      <p>El asistente analizará las coordenadas seleccionadas, la escena Sentinel-2, los índices y los sectores priorizados. También considerará {geoMatches.length} cruces cartográficos y {activeGeologyEvidence.length} antecedentes que hayas cargado. No añadirá automáticamente información de otras zonas.</p>
-                      <p className="geologist-docs-note">Para interpretar litología o mineralización de una zona, importa una carta geológica en GeoJSON o registra información verificable vinculada a esa ubicación. Sin documentación, GeoMiner se limitará a la evidencia espectral del área.</p>
+                      <p>El asistente analizará las coordenadas seleccionadas, la escena Sentinel-2, los índices y los sectores priorizados. También considerará {geoMatches.length} cruces cartográficos, {activeGeologyEvidence.length} antecedentes y {activePlates.length} láminas del área que hayas cargado. No añadirá automáticamente información de otras zonas.</p>
+                      <p className="geologist-docs-note">Antes del informe, pulsa «Investigar esta zona automáticamente» en Estudio geológico. Si responden las fuentes, GeoMiner utilizará unidades y estructuras cartografiadas. Sin respuesta o sin cobertura, el análisis se limita a la evidencia espectral.</p>
                       {geoMatches.length>0&&<p className="geologist-docs-note">Se enviarán a la IA {geoMatches.length} coincidencias sector–polígono con sus atributos y la indicación expresa de que el GeoJSON NO fue auditado. No se enviarán todos los polígonos.</p>}
                       <label htmlFor="geologist-question">¿Qué quieres preguntar al geólogo de IA? (opcional)</label>
                       <textarea id="geologist-question" rows={3} maxLength={700} value={geologistQuestion} onChange={e=>setGeologistQuestion(e.target.value)} placeholder="Ej.: ¿Qué sectores de esta zona tienen mejor evidencia espectral y qué cartografía debo buscar por estas coordenadas?"/>
-                      <div className="geologist-quickquestions"><button type="button" onClick={()=>setGeologistQuestion('Identifica qué sabemos de las coordenadas y de las capas geológicas cargadas. ¿Qué hipótesis litológicas podrían explicar los índices y cuáles necesitan contrastación?')}>Geología y alteraciones</button><button type="button" onClick={()=>setGeologistQuestion('¿Qué sectores revisar primero según coincidencia entre índices, persistencia temporal y posibles falsos positivos por desmontes?')}>Priorizar sectores</button><button type="button" onClick={()=>setGeologistQuestion('Dame un plan concreto para verificar los sectores y sus coordenadas frente a cartografía geológica de SERGEOMIN, fuentes científicas y observaciones autorizadas, sin inventar unidades geológicas.')}>Plan de verificación</button></div>
                       <label className="v08-preview-toggle"><input type="checkbox" checked={aiPreview} onChange={e=>setAiPreview(e.target.checked)}/> Analizar también miniatura de falso color (128×128). Opcional, puede consumir más tokens; la imagen NO demuestra minerales.</label>
                       <label htmlFor="report-admin-code">Código privado de acceso (no es la clave API)</label>
                       <input id="report-admin-code" type="password" autoComplete="off" value={adminCode} onChange={e=>setAdminCode(e.target.value)} placeholder="Código definido en Vercel"/>
@@ -787,7 +887,7 @@ export default function App() {
               </div>
             ) : activeTab==='analysis' ? (
               <div className="panel-inner spectral-panel">
-                <div className="spectral-intro"><Layers3 size={19}/><div><strong>Prospección espectral preliminar v1.1</strong><p>Sentinel-2 L2A · B2/B3/B4/B8/B11/B12, bandas red-edge opcionales y SCL. No es detección de minerales.</p></div></div>
+                <div className="spectral-intro"><Layers3 size={19}/><div><strong>Prospección espectral v1.2</strong><p>Sentinel-2 L2A · B2/B3/B4/B8/B11/B12, bandas red-edge opcionales y SCL. No es detección de minerales.</p></div></div>
                 {!bbox&&<div className="empty-state compact"><Crosshair size={31} className="muted"/><strong>Selecciona tu terreno</strong><p>Delimita un terreno con GPS o dos clics en el mapa. Después busca escenas para analizar.</p></div>}
                 {bbox&&area>25.01&&<div className="error-box"><Info size={17}/> Elige 5 × 5 km o menos para el procesamiento inicial. Área actual: {fmt(area)} km².</div>}
                 {bbox&&area<=25.01&&<div className="spectral-step"><strong>1. Buscar imágenes multiespectrales</strong><button type="button" onClick={findAnalysisScenes} disabled={analysisBusy}>Consultar escenas gratuitas</button></div>}
@@ -839,14 +939,9 @@ export default function App() {
             ):(
               <div className="panel-inner">
                 {saved.length===0?<div className="empty-state compact"><BookmarkPlus size={35} className="muted"/><strong>Sin áreas guardadas</strong><p>Delimita un terreno y pulsa «Guardar» para conservarlo en este navegador.</p></div>:
-                <div className="saved-list">{saved.map(x=><div className="saved-item" key={x.id}><button className="saved-title" onClick={()=>{restore(x);setActiveTab('scenes');}}><MapPinned size={17}/><span><strong>{x.name}</strong><small>{fmt(x.area)} km² · Abrir en mapa</small></span></button><button className="icon-button delete-btn" aria-label="Eliminar área" onClick={()=>deleteArea(x.id)}><Trash2 size={16}/></button></div>)}</div>}
+                <div className="saved-list">{saved.map(x=><div className="saved-item" key={x.id}><button className="saved-title" onClick={()=>{restore(x);setActiveTab('analysis');}}><MapPinned size={17}/><span><strong>{x.name}</strong><small>{fmt(x.area)} km² · Abrir en mapa</small></span></button><button className="icon-button delete-btn" aria-label="Eliminar área" onClick={()=>deleteArea(x.id)}><Trash2 size={16}/></button></div>)}</div>}
               </div>
             )}
-            <div className="inspector-foot">
-              <div className="next-heading"><span className="future-dot"/><strong>Próxima etapa</strong></div>
-              <div className="next-feature"><div><Layers3 size={19}/></div><p><strong>Índices espectrales</strong><span>Escenas reales, capas espectrales y sectores agrupados (experimental).</span></p></div>
-              <div className="next-feature"><div><FileText size={19}/></div><p><strong>Informe PDF e IA</strong><span>Informe ampliado con sectores y coordenadas aproximadas.</span></p></div>
-            </div>
           </div>
         </section>
         <footer className="page-footer"><span>GeoMiner Bolivia · Plataforma en desarrollo</span><span>Prospección preliminar · No sustituye estudios geológicos de campo</span></footer>

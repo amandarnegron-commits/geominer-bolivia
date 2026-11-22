@@ -1,0 +1,16 @@
+GEOMINER BOLIVIA v1.3 — REPARACION
+
+Este paquete acumula todos los archivos modificados o nuevos de v1.2 y v1.3.
+Sirve para instalar v1.3 encima de un proyecto v1.1, v1.2 o un intento parcial de v1.3.
+Corrige el error Could not resolve ../src/geological-study.js
+No incluye ni toca .env, node_modules, claves de API ni tus datos del navegador.
+
+En Terminal de Mac:
+cd ~/Downloads/geominer-bolivia
+unzip -o ~/Downloads/GeoMiner_Bolivia_v1.3_REPARACION_acumulada_desde_v1.1.zip -d .
+ls -l src/geological-study.js src/geological-map.js src/styles.css
+npm test
+npm run build
+
+Si compila: GitHub Desktop -> Commit to main -> Push origin.
+Vercel debería desplegar automáticamente la versión nueva.

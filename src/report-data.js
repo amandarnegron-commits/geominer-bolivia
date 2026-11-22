@@ -19,7 +19,7 @@ export function prepareReport({ bbox, region, scene, result, temporal=null, cont
   };
   const decision=buildEvidenceDecision({result,bbox,zones,secondResult});
   return {
-    version: '1.1',
+    version: '1.2',
     decision,
     generatedAt: new Date().toISOString(),
     region: String(region || 'Bolivia').slice(0,80),

@@ -1,36 +1,32 @@
-# GeoMiner Bolivia 1.1
+# GeoMiner Bolivia v1.3 — motor de gabinete por coordenadas
 
-**GeoMiner es un explorador espectral que trabaja exclusivamente sobre las coordenadas WGS84 escogidas por el usuario.** No asigna bibliografía, minerales, unidades geológicas ni advertencias de un distrito por su posición.
+La plataforma sigue usando Sentinel-2 para calcular índices espectrales y sectores; además consulta **fuentes geológicas y catálogos hiperespectrales independientes** desde el backend, sin pedir que el usuario pegue páginas de un informe antiguo.
 
-## Actualizar sobre v1.0
+## Inicio rápido
 
-Descomprimir `GeoMiner_Bolivia_v1.1_actualizacion_desde_v1.0.zip` sobre `~/Downloads/geominer-bolivia` y ejecutar el script de limpieza incluido:
+1. Descarga el ZIP de actualización **desde v1.2** y descomprímelo sobre el proyecto local. Para un proyecto nuevo usa el ZIP completo.
+2. `npm install && npm test && npm run build && npm run dev`.
+3. Selecciona la zona con latitud y longitud, hasta **25 km²**.
+4. Abre **Estudio geológico**, introduce el mismo código privado de GeoMiner que ya usas para OpenAI y pulsa **Investigar esta zona automáticamente**.
+5. Examina las unidades, estructuras, perfil de relieve y el inventario de escenas EnMAP y EMIT que hayan respondido. En el mapa se mostrarán las capas WFS disponibles.
+6. Para PDF con estadísticas Sentinel-2 procesa además una escena en **Análisis**; luego abre **Informe** y descarga el PDF con resultados automáticos añadidos.
 
-```bash
-cd ~/Downloads/geominer-bolivia
-unzip -o ~/Downloads/GeoMiner_Bolivia_v1.1_actualizacion_desde_v1.0.zip -d .
-bash ./limpiar_archivos_anteriores.sh
-npm test
-npm run build
-```
+## Fuentes y alcances
 
-Publicar vía GitHub Desktop → Commit to main → Push origin. Vercel realiza el despliegue si la integración está activa.
+- GeoBolivia/SERGEOTECMIN: mapa nacional 2000, fallas y pliegues. **Escala regional**.
+- EnMAP DLR L2A: inventario **solo metadatos**, aún sin descarga y procesamiento hiperespectral.
+- EMIT NASA L2BMIN: inventario **solo metadatos**.
+- Open Topo Data SRTM90m: perfil topográfico aproximado, **API pública de prueba**, no licencia comercial asegurada.
+- Sentinel-2 L2A (Element84): índices de superficie B4/B2, B11/B12 y auxiliares; no identifica leyes ni reservas minerales.
 
-## Flujo
+Nunca interpreta un *servidor no disponible* como *cero depósitos*. Una carta geológica, una firma de alteración y una estimación de depósito son afirmaciones de naturaleza distinta.
 
-1. Escribe latitud, longitud y tamaño del área, o delimita el terreno en el mapa.
-2. En **Análisis**, consulta una escena Sentinel-2 L2A, selecciona 20 m o 10 m, procesa bandas.
-3. En **Sectores**, consulta el índice, coordenadas y prioridad de revisión. No equivale a probabilidad de yacimiento.
-4. En **Validar**, contrasta otra escena y, si procede, un cuadro vecino.
-5. En **Geología GPS**, incorpora un mapa GeoJSON WGS84 (EPSG:4326) o antecedentes con fuente.
-6. En **Informe**, revisa el diagnóstico, descarga PDF y consulta a OpenAI con el código privado.
+## Infraestructura
 
-Las variables en Vercel no cambian: `OPENAI_API_KEY` o `openai_api_key`, `GEOMINER_ADMIN_CODE` o `geominer_admin_code`; `GEOMINER_OPENAI_MODEL` permanece opcional.
+- `api/auto-research.js`: API de Vercel, autenticada con `GEOMINER_ADMIN_CODE` o `geominer_admin_code`.
+- `lib/auto-research.js`: motor de consulta con timeout y sanitización de respuesta.
+- `src/App.jsx`: único botón principal de investigación, mapa y perfil.
+- `src/report-pdf.js`: carta vectorial, perfil y referencias documentales.
+- `lib/report-api.js`: envía resúmenes de las fuentes consultadas a OpenAI con limitaciones explícitas.
 
-## Notas
-
-- Al cambiar el terreno, los análisis y la pregunta previa a IA se limpian.
-- La visualización satelital histórica de referencia es distinta de la escena procesada.
-- Las notas locales y áreas previamente guardadas permanecen en el navegador; no se borran datos propios silenciosamente.
-- Las conclusiones se basan en resultados medidos por el código; sin carta o muestras, no atribuyen minerales concretos a los puntos.
-- PDF local no consume tokens. OpenAI es opcional y requiere una clave API privada en el servidor.
+Consulta `CHANGELOG_v1.3.md` para límites comerciales y fuentes. **No está listo aún como informe geológico certificable o plataforma comercial autónoma.**
