@@ -1,60 +1,77 @@
-# GeoMiner Bolivia v0.3 — Análisis espectral exploratorio
+# GeoMiner Bolivia v0.4
 
-Prototipo web para selección GPS, consulta de escenas Sentinel-2 y visualización de **índices espectrales reales, no mineralización comprobada**.
+Aplicación de prospección satelital **preliminar**. NO certifica minerales, leyes, reservas, profundidad, derechos ni éxito de exploración.
 
-## Qué incorpora v0.3
+## Instalación rápida sobre la versión 0.3 de tu Mac
 
-- Mantiene mapa base OpenStreetMap y mosaico satelital histórico EOX, ya corregidos en v0.2.1.
-- Mantiene consulta de escenas **Copernicus Data Space** (`/api/sentinel`).
-- Añade **Earth Search** v1 (Element 84) para buscar escenas públicas Sentinel-2 Collection 1 L2A con archivos COG por banda (`/api/analysis-scenes`). El catálogo complementario se usa porque entrega archivos COG, no porque sea otro satélite.
-- Analiza realmente bandas de reflectancia **B2 (azul), B4 (rojo), B8 (NIR), B11 y B12 (SWIR)** y banda de clasificación **SCL**.
-- Calcula respuesta asociada a óxidos de hierro **B4/B2** y respuesta SWIR de arcillas/hidroxilos **B11/B12** en una cuadrícula **96 x 96** para terrenos de hasta **25 km²**.
-- Rechaza muestras etiquetadas SCL como nube, agua, sombra, nieve y vegetación. Filtro NDVI adicional para terreno expuesto. La banda SCL no es perfecta; sigue existiendo incertidumbre.
-- Colorea **el cuartil superior (percentil 75+) del propio terreno**, resalta la intensidad relativa y exporta puntos de percentil 90+ en GeoJSON, con advertencias científicas.
-- Identifica la fecha de la escena analizada, distinta del mosaico de fondo histórico de 2016.
-
-## Limitaciones importantes
-
-- **No es detección directa de oro, plata, cobre ni reservas**. Hay muchas causas posibles para los mismos índices.
-- Los percentiles son **relativos a la selección** y no son porcentajes de mineral ni probabilidades de yacimiento.
-- Una imagen puede cubrir parcialmente un área o contener nubes pese a la nubosidad reportada a nivel escena.
-- La cuadrícula 96 x 96 es un muestreo: NO equivale a resolución uniforme original de 10/20 metros ni sustituye un análisis SIG profesional.
-- Descarga fragmentos de GeoTIFF COG directamente en el navegador: requiere acceso web y servidor de imágenes con HTTP Range + CORS. La aplicación muestra un error si esas condiciones fallan.
-- El raster SCL es una clasificación automática que puede fallar. Los resultados deben validarse con campo y geólogo.
-- OpenAI, informes PDF y Supabase todavía NO están conectados.
-- No probado de extremo a extremo contra servicios externos desde este entorno sin red: se han ejecutado pruebas unitarias y verificación sintáctica. Hay que verificar una escena en Mac después de instalar dependencias.
-- No incluir API keys en el repositorio o en `VITE_`.
-
-## Actualizar desde la versión 0.2.1 en la Mac
-
-Descarga y descomprime el **parche** sobre la carpeta del repo existente, conservando `.git`.
+Descarga el ZIP **de actualización v0.4**, que contiene únicamente archivos modificados/nuevos, y descomprímelo dentro de `~/Downloads/geominer-bolivia`:
 
 ```bash
 cd ~/Downloads/geominer-bolivia
-unzip -o ~/Downloads/GeoMiner_Bolivia_v0.3_actualizacion.zip -d .
+unzip -o ~/Downloads/GeoMiner_Bolivia_v0.4_actualizacion.zip -d .
 npm install
 npm test
 npm run build
 npm run dev
 ```
 
-Probar `http://localhost:5173` antes de publicar. Seleccionar **Potosí**, GPS 5 km, **Aplicar**, elegir **Análisis**, **Consultar escenas gratuitas**, elegir escena con nubosidad baja y **Procesar bandas**. Si la carga tarda, esperar al resultado del navegador; se van leyendo 6 archivos COG.
+Abre `http://localhost:5173`. Si npm está bloqueado por PowerShell en Windows usa `npm.cmd install` y `npm.cmd run dev`.
 
-Al funcionar, abrir GitHub Desktop, `Commit to main` y `Push origin`. Vercel publica `main` si está vinculado. No hace falta configurar ninguna clave para esta fase.
+## Flujo de uso
 
-## Arquitectura
+1. Selecciona una zona de hasta 5 × 5 km en Potosí u otra región, preferiblemente con suelo descubierto.
+2. En **Análisis**, consulta una escena y **procesa sus bandas**. Si la escena falla, selecciona otra.
+3. En **Informe**, pulsa **Descargar informe PDF gratuito**. El archivo contiene datos calculados, límites geográficos, método y advertencias.
+4. Opcional: configura OpenAI (ver abajo) para generar texto interpretativo. Después puedes descargar un PDF con ese texto.
 
-- `src/cog-analysis.js`: lectura remota de COG y reproyección UTM mediante `geotiff` + `proj4`.
-- `src/indices.js`: cálculos, máscara de superficie, cuantiles, imagen RGBA y exportación a GeoJSON.
-- `lib/analysis-catalog.js`: validación de áreas, filtrado de URLs COG, búsqueda STAC.
-- `api/analysis-scenes.js`: API de Vercel.
-- `vite.config.js`: la misma API cuando se ejecuta en localhost.
-- `src/App.jsx`: interfaz y capa georreferenciada MapLibre.
+## Configurar OpenAI SIN exponer claves
 
-## Fuentes y lectura adicional
+1. En `https://platform.openai.com/api-keys` genera una clave de proyecto que usarás solo en el servidor.
+2. En Vercel abre **Project Settings → Environment Variables** del proyecto `geominer-bolivia` de Amanda.
+3. Agrega:
 
-- https://github.com/Element84/earth-search/blob/main/docs/collections/sentinel-2-l2a.md
-- https://registry.opendata.aws/sentinel-2-l2a-cogs/
-- https://geotiffjs.github.io/geotiff.js/
-- https://www.mdpi.com/2076-3417/15/24/13251
-- https://www.openstreetmap.org/copyright
+| Variable | Valor | Alcance |
+|---|---|---|
+| `OPENAI_API_KEY` | Clave privada de API | Servidor (Production) |
+| `GEOMINER_ADMIN_CODE` | Una contraseña aleatoria LARGA creada por ti | Servidor (Production) |
+| `GEOMINER_OPENAI_MODEL` | `gpt-6-luna` | Servidor (Production) |
+
+4. Guarda las variables y haz **Redeploy** para que se carguen en funciones Vercel.
+5. En GeoMiner, pestaña **Informe**, introduce **el código de acceso**, no la clave API, y pulsa *Generar interpretación con IA*. El código se mantiene solo en memoria hasta terminar la petición y se borra del formulario.
+6. Para probar OpenAI en localhost, crea un `.env` **únicamente en tu Mac** y carga las variables en la sesión que ejecuta Vite (por ejemplo, `set -a; source .env; set +a; npm run dev`). El `.env` está excluido por `.gitignore`.
+
+**No envíes las claves ni los códigos por chat, capturas ni GitHub.** La API de OpenAI se cobra por tokens y tiene facturación separada de ChatGPT.
+
+**Importante:** no habilites esto como servicio público de pago todavía. Para producción hace falta autenticación (Supabase Auth), cuentas de cliente, límites de uso en servidor, monitor de gasto, términos comerciales de la cartografía y revisión geológica.
+
+## Contenido y calidad de los resultados
+
+- Los índices son B4/B2 y B11/B12 sobre reflectancia Sentinel-2 L2A; **no son pruebas de minerales concretos**.
+- La máscara usa SCL y NDVI para limitar el análisis a suelo aparentemente descubierto; SCL 7 es «sin clasificar», por lo que incluye incertidumbre.
+- El cálculo del navegador reescala una zona a cuadrícula 96x96; no corresponde a resolución espacial nativa.
+- Los percentiles son valores **relativos dentro del terreno elegido**, no concentraciones ni potencial comercial.
+- Los datos enviados al modelo provienen del navegador; no están auditados independientemente.
+- `store:false` evita guardar la respuesta en el almacenamiento de Responses API de manera predeterminada, sujeto a las políticas de tratamiento de datos aplicables.
+- PDF se genera localmente sin subir a Supabase ni utilizar servicios externos.
+
+## Fuente de documentación
+
+- OpenAI Responses API: https://developers.openai.com/api/reference/resources/responses/methods/create
+- Modelos: https://developers.openai.com/api/docs/models
+- Element84 Earth Search: https://earth-search.aws.element84.com/v1
+- Copernicus Data Space: https://dataspace.copernicus.eu/
+
+## Archivos clave
+
+- `src/report-data.js`: ensamblado objetivo del informe.
+- `src/report-pdf.js`: descarga PDF usando `jspdf` 4.2.1 o posterior, con correcciones de seguridad.
+- `api/ai-report.js`: handler de Vercel.
+- `lib/report-api.js`: validación, control de acceso e integración Responses API.
+- `tests/report.test.mjs`: pruebas sin llamadas reales ni costos.
+
+## Versiones
+
+- 0.1: mapa y catálogo Copernicus
+- 0.2: GPS, GeoJSON/KML y vistas base
+- 0.3: índices espectrales iniciales
+- **0.4: informes PDF y conexión privada a OpenAI**

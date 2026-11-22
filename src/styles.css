@@ -99,3 +99,31 @@ h1{font-family:Manrope,sans-serif;font-size:23px;color:#18313d;margin:0;letter-s
 .spectral-nav{width:100%;border:0;text-align:left;background:#18394a;margin-bottom:6px}.analysis-run{margin-top:9px;background:#bcd7e4;color:#103b4a;box-shadow:none}.analysis-run:hover:not(:disabled){background:#d0ecf0}.map-spectral-warning{position:absolute;top:66px;left:15px;z-index:2;pointer-events:none;max-width:calc(100% - 30px);border:1px solid #e1cabc;border-radius:8px;background:#fff9eefa;color:#70492e;font-size:10px;line-height:1.4;padding:9px 10px;box-shadow:0 4px 12px #3344441b}
 .inspector-tabs{gap:21px}.spectral-panel{padding:12px 14px 20px;overflow-y:auto}.spectral-intro{display:flex;gap:10px;align-items:flex-start;background:#edf7f5;border:1px solid #d3e9e2;border-radius:10px;padding:13px;color:#15866e}.spectral-intro svg{flex-shrink:0}.spectral-intro strong{color:#26564c;font-size:12px}.spectral-intro p{font-size:10px;line-height:1.6;margin:5px 0 0;color:#5d817a}.spectral-step{display:grid;gap:10px;padding:16px 2px 12px}.spectral-step strong{font-size:12px;color:#375663}.spectral-step button,.spectral-export{background:white;border:1px solid #9ed5c6;padding:12px;border-radius:8px;color:#147b69;font-size:11px;font-weight:800;text-align:center}.spectral-step button:hover:not(:disabled),.spectral-export:hover{background:#eefbf6}
 .spectral-loading{display:flex;align-items:center;gap:8px;color:#547881;background:#f4f8f8;border-radius:7px;padding:11px;font-size:11px;margin:8px 0}.spectral-scene-box{display:grid;gap:8px;padding:13px 0;border-top:1px solid #e1eae9}.spectral-scene-box>small{font-size:10px;color:#90a5ad}.spectral-scene-box label{color:#405c64;font-size:11px;font-weight:800}.spectral-scene-box select{width:100%;padding:10px 8px;border:1px solid #d5e2e5;border-radius:8px;font-size:11px;background:#fff;color:#274350}.spectral-scene-box p{font-size:10px;line-height:1.5;color:#8a9da3;margin:1px 0 7px}.spectral-process{box-shadow:none;min-height:44px;font-size:11px}.spectral-output{display:grid;gap:12px;padding-top:14px;border-top:1px solid #dce9e6}.spectral-output>strong{font-size:12px;color:#2c5753}.spectral-mode{display:flex;gap:5px}.spectral-mode button{flex:1;min-width:0;border:1px solid #d3e2e2;padding:9px 5px;border-radius:7px;font-size:10px;font-weight:800;color:#5c7881;background:#fff}.spectral-mode button.active{background:#d6f1e6;color:#126853;border-color:#7ecab4}.spectral-stat-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}.spectral-stat-grid>div{display:grid;gap:4px;background:#f1f7f7;padding:10px;border-radius:8px}.spectral-stat-grid small{font-size:10px;color:#7b999c}.spectral-stat-grid strong{font-size:12px;color:#285560}.spectral-explain{color:#526e75;font-size:11px;line-height:1.7;margin:0}.spectral-export{display:flex;align-items:center;justify-content:center;gap:6px}.spectral-footnote{margin-top:14px;font-size:10px;line-height:1.65;color:#8b9da2;border-top:1px dashed #dde6e7;padding-top:11px}
+
+/* GeoMiner v0.4: informes técnicos descargables y análisis de IA */
+.inspector-tabs{gap:14px;flex-wrap:wrap}
+.report-panel{background:#fcfefe}
+.report-intro{display:flex;gap:12px;align-items:flex-start;padding:20px 17px;background:#f0f8f5;border-bottom:1px solid #e1ece7;color:#218d76}
+.report-intro strong{display:block;color:#23464a;font-size:13px;margin-bottom:6px}
+.report-intro p{margin:0;color:#72928c;font-size:11px;line-height:1.6}
+.report-intro svg{flex-shrink:0;margin-top:2px}
+.report-body{padding:18px}
+.report-facts{display:grid;grid-template-columns:1fr 1fr;gap:9px}
+.report-facts>div{display:flex;flex-direction:column;gap:7px;background:#f1f7f7;border:1px solid #e5ecee;padding:12px;border-radius:9px;min-width:0}
+.report-facts small{color:#819aa1;font-size:10px}
+.report-facts strong{font-size:12px;color:#294754;overflow-wrap:anywhere}
+.report-notice{font-size:11px;line-height:1.65;color:#6b8490;margin:16px 1px}
+.pdf-export{background:#2ab898}
+.report-ai-section{border-top:1px solid #e2ecec;margin-top:23px;padding-top:18px}
+.report-ai-section p{font-size:11px;line-height:1.7;color:#68848c}
+.report-ai-section label{font-size:11px;font-weight:800;color:#42616a;display:block;margin:15px 0 7px}
+.report-ai-section input{width:100%;min-height:41px;border-radius:8px;border:1px solid #bed2d5;background:white;color:#193846;font-size:12px;padding:9px 12px;margin-bottom:12px}
+.report-ai-section input:focus{border-color:#35aa94;outline:2px solid #8ddcc349}
+.report-ai-section .run-btn{font-size:11px}
+.report-ai-section .error-box{margin:13px 0}
+.ai-response{background:#f6faf9;border:1px solid #d9eae6;border-radius:10px;padding:16px 13px;margin-top:15px}
+.ai-response>strong{color:#207960;font-size:12px}
+.ai-response p{white-space:pre-wrap;overflow-wrap:anywhere;color:#334e58;font-size:11px;line-height:1.7;margin:12px 0}
+.ai-response small{display:block;font-size:10px;color:#8ca7a9;margin-bottom:11px}
+.ai-response .spectral-export{width:100%;display:flex;align-items:center;justify-content:center;gap:7px}
+.report-link{background:#e7f5f0;color:#13705c;border:1px solid #b7ddd1;border-radius:8px;padding:9px 14px;font-size:11px;font-weight:800}

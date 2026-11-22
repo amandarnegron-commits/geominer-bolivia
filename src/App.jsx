@@ -3,6 +3,8 @@ import maplibregl from 'maplibre-gl';
 import { squareFromCenter, bboxGeoJSON, bboxKml } from './geo.js';
 import { analyseScene } from './cog-analysis.js';
 import { INDICATORS, statsFor, rasterRGBA, exportTopPoints } from './indices.js';
+import { prepareReport } from './report-data.js';
+import { downloadReportPdf } from './report-pdf.js';
 import {
   Satellite, MapPinned, Layers3, Map, Search, Compass, Mountain, Waves,
   Crosshair, ScanLine, Database, FileText, ChevronDown, ExternalLink,
@@ -54,6 +56,11 @@ export default function App() {
   const [analysisMessage, setAnalysisMessage] = useState('');
   const [analysisError, setAnalysisError] = useState('');
   const [analysisResult, setAnalysisResult] = useState(null);
+  const [aiText, setAiText] = useState('');
+  const [aiUsage, setAiUsage] = useState(null);
+  const [aiBusy, setAiBusy] = useState(false);
+  const [aiError, setAiError] = useState('');
+  const [adminCode, setAdminCode] = useState('');
   const [indicator, setIndicator] = useState('iron');
   const [heatmapUrl, setHeatmapUrl] = useState(null);
   const abortAnalysis = useRef(null);
@@ -65,10 +72,11 @@ export default function App() {
   const area = useMemo(() => areaOf(bbox), [bbox]);
   const visibleScenes = useMemo(() => (scenes?.scenes || []).filter(s => s.cloud !== null && s.cloud <= Number(cloudMax)), [scenes, cloudMax]);
   const analysisStats = useMemo(() => analysisResult ? statsFor(analysisResult[indicator]) : null,[analysisResult,indicator]);
+  const preparedReport = useMemo(() => analysisResult && bbox && analysisScene ? prepareReport({bbox,region:city,scene:analysisScene,result:analysisResult}):null,[analysisResult,bbox,analysisScene,city]);
   function clearSpectral() {
     abortAnalysis.current?.abort();
     setAnalysisResult(null);setHeatmapUrl(null);setAnalysisScenes(null);setAnalysisScene(null);
-    setAnalysisError('');setAnalysisMessage('');
+    setAnalysisError('');setAnalysisMessage('');setAiText('');setAiUsage(null);setAiError('');
   }
 
   useEffect(() => {
@@ -171,7 +179,7 @@ export default function App() {
 
   async function findAnalysisScenes() {
     if(!bbox||area>25.01||area<0.01){setAnalysisError('Para el análisis selecciona una zona de 0,01 a 25 km².');return;}
-    setAnalysisBusy(true);setAnalysisError('');setAnalysisScenes(null);setAnalysisScene(null);
+    setAnalysisBusy(true);setAnalysisError('');setAnalysisScenes(null);setAnalysisScene(null);setAiText('');setAiUsage(null);setAiError('');
     setAnalysisResult(null);setHeatmapUrl(null);
     setAnalysisMessage('Buscando escenas públicas con bandas B2, B4, B8, B11 y B12…');
     setActiveTab('analysis');
@@ -189,7 +197,7 @@ export default function App() {
   async function processAnalysis() {
     if(!bbox||!analysisScene)return;
     const controller=new AbortController();abortAnalysis.current=controller;
-    setAnalysisBusy(true);setAnalysisError('');setAnalysisResult(null);setHeatmapUrl(null);
+    setAnalysisBusy(true);setAnalysisError('');setAnalysisResult(null);setHeatmapUrl(null);setAiText('');setAiUsage(null);setAiError('');
     try {
       const result=await analyseScene(analysisScene,bbox,{onProgress:setAnalysisMessage,signal:controller.signal});
       if(result.valid===0)throw new Error('No hay píxeles de suelo aptos después de excluir nubes, agua y vegetación. Prueba otra fecha o terreno.');
@@ -207,6 +215,27 @@ export default function App() {
     document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),1000);
   }
 
+  async function generateAiReport() {
+    if (!preparedReport || aiBusy) return;
+    if (!adminCode.trim()) {setAiError('Ingresa el código privado de GeoMiner configurado en Vercel.');return;}
+    setAiBusy(true);setAiError('');setAiText('');setAiUsage(null);
+    try {
+      const response=await fetch('/api/ai-report',{
+        method:'POST',
+        headers:{'Content-Type':'application/json','x-geominer-admin-code':adminCode},
+        body:JSON.stringify({report:preparedReport})
+      });
+      const payload=await response.json();
+      if(!response.ok)throw new Error(payload.error||'Error conectando con OpenAI.');
+      setAiText(payload.text||'');setAiUsage(payload.usage||null);
+    }catch(err){setAiError(err?.message||'No se pudo generar la interpretación.');}
+    finally{setAiBusy(false);setAdminCode('');}
+  }
+  function downloadPdf() {
+    if(!preparedReport)return;
+    try{downloadReportPdf(preparedReport,{aiText,heatmapUrl});setAiError('');}
+    catch(err){setAiError('No se pudo generar el PDF: '+(err?.message||'error desconocido'));}
+  }
   function useGPS() {
     try {
       const b = squareFromCenter(gpsLon,gpsLat,gpsSide);
@@ -276,7 +305,7 @@ export default function App() {
           <div className="section-cap">PLATAFORMA</div>
           <div className="nav-active"><MapPinned size={18}/><span>Explorador satelital</span><span className="nav-dot"/></div>
           <button type="button" className="nav-active spectral-nav" onClick={()=>{setActiveTab('analysis');setMobilePanel(false);}}><Layers3 size={18}/><span>Índices espectrales</span><span className="nav-dot"/></button>
-          <div className="nav-disabled"><FileText size={18}/><span>Informes con IA</span><small>Próximo</small></div>
+          <button type="button" className="nav-active spectral-nav" onClick={()=>{setActiveTab('report');setMobilePanel(false);}}><FileText size={18}/><span>Informes PDF e IA</span><span className="nav-dot"/></button>
           <div className="sidebar-divider"/>
           <div className="section-cap">ZONA DE TRABAJO</div>
           <div className="sidebar-card">
@@ -323,7 +352,7 @@ export default function App() {
           </button>
           <div className="limit-note"><Info size={14}/><span>Hasta 25 km² para análisis multiespectral gratuito. Los índices no identifican yacimientos.</span></div>
         </div>
-        <div className="sidebar-foot"><span className="live-dot"/> GeoMiner v0.3 <span className="foot-right">PROTOTIPO</span></div>
+        <div className="sidebar-foot"><span className="live-dot"/> GeoMiner v0.4 <span className="foot-right">PROTOTIPO</span></div>
       </aside>
       <main className="main-area">
         <header className="topbar">
@@ -333,7 +362,7 @@ export default function App() {
           </div>
           <div className="topbar-meta">
             <span className="state-pill"><span className="live-dot"/> Catálogo Copernicus</span>
-            <span className="v-tag">Beta 0.3</span>
+            <span className="v-tag">Beta 0.4</span>
           </div>
         </header>
         <section className="work-area">
@@ -362,9 +391,35 @@ export default function App() {
             <div className="inspector-tabs">
               <button onClick={()=>setActiveTab('scenes')} className={activeTab==='scenes'?'selected':''}>Imágenes</button>
               <button onClick={()=>setActiveTab('analysis')} className={activeTab==='analysis'?'selected':''}>Análisis</button>
+              <button onClick={()=>setActiveTab('report')} className={activeTab==='report'?'selected':''}>Informe</button>
               <button onClick={()=>setActiveTab('saved')} className={activeTab==='saved'?'selected':''}>Mis áreas <span>{saved.length}</span></button>
             </div>
-            {activeTab==='analysis' ? (
+            {activeTab==='report' ? (
+              <div className="panel-inner report-panel">
+                <div className="report-intro"><FileText size={22}/><div><strong>Informe geológico preliminar</strong><p>Coordenadas, escena utilizada, estadísticas reales, limitaciones y exportación PDF.</p></div></div>
+                {!preparedReport ? <div className="empty-state compact"><FileText size={35} className="muted"/><strong>Aún no hay datos calculados</strong><p>Primero abre Análisis y procesa una escena Sentinel-2. No generaremos informes de supuestos minerales sin datos.</p><button className="report-link" onClick={()=>setActiveTab('analysis')}>Ir a Análisis</button></div> :
+                  <div className="report-body">
+                    <div className="report-facts">
+                      <div><small>Región</small><strong>{preparedReport.region}</strong></div>
+                      <div><small>Área</small><strong>{fmt(preparedReport.areaKm2)} km²</strong></div>
+                      <div><small>Escena</small><strong>{dateStr(preparedReport.scene.date)}</strong></div>
+                      <div><small>Suelo útil</small><strong>{preparedReport.grid.usablePct}%</strong></div>
+                    </div>
+                    <p className="report-notice">Este informe describe respuestas espectrales, NO identifica oro, plata ni reservas. Descargar el PDF sin IA no consume tokens.</p>
+                    <button type="button" className="run-btn pdf-export" onClick={downloadPdf}><Download size={17}/> Descargar informe PDF gratuito</button>
+                    <div className="report-ai-section">
+                      <div className="caption-label"><FileText size={17}/> Interpretación con OpenAI</div>
+                      <p>La API es opcional y requiere configuración privada en Vercel. Se envían coordenadas y métricas del análisis; no se envían las imágenes completas.</p>
+                      <label htmlFor="report-admin-code">Código privado de acceso (no es la clave API)</label>
+                      <input id="report-admin-code" type="password" autoComplete="off" value={adminCode} onChange={e=>setAdminCode(e.target.value)} placeholder="Código definido en Vercel"/>
+                      <button type="button" className="run-btn" onClick={generateAiReport} disabled={aiBusy||!adminCode.trim()}>{aiBusy?<LoaderCircle className="spin" size={17}/>:<FileText size={17}/>} {aiBusy?'Interpretando resultados…':'Generar interpretación con IA'}</button>
+                      {aiError&&<div role="alert" className="error-box"><AlertTriangle size={17}/>{aiError}</div>}
+                      {aiText&&<div className="ai-response"><strong>Interpretación preliminar generada</strong><p>{aiText}</p>{aiUsage&&<small>Consumo: {aiUsage.inputTokens??'s/d'} tokens entrada · {aiUsage.outputTokens??'s/d'} salida</small>}<button type="button" className="spectral-export" onClick={downloadPdf}><Download size={15}/> Descargar PDF con esta interpretación</button></div>}
+                    </div>
+                  </div>
+                }
+              </div>
+            ) : activeTab==='analysis' ? (
               <div className="panel-inner spectral-panel">
                 <div className="spectral-intro"><Layers3 size={19}/><div><strong>Prospección espectral preliminar</strong><p>Sentinel-2 L2A · bandas reales B2, B4, B8, B11 y B12 · clasificación de terreno SCL.</p></div></div>
                 {!bbox&&<div className="empty-state compact"><Crosshair size={31} className="muted"/><strong>Selecciona tu terreno</strong><p>Delimita un terreno con GPS o dos clics en el mapa. Después busca escenas para analizar.</p></div>}
@@ -418,7 +473,7 @@ export default function App() {
             <div className="inspector-foot">
               <div className="next-heading"><span className="future-dot"/><strong>Próxima etapa</strong></div>
               <div className="next-feature"><div><Layers3 size={19}/></div><p><strong>Índices espectrales</strong><span>Disponible en pestaña Análisis (experimental).</span></p></div>
-              <div className="next-feature"><div><FileText size={19}/></div><p><strong>Informe con OpenAI</strong><span>Interpretación con advertencias geológicas y PDF.</span></p></div>
+              <div className="next-feature"><div><FileText size={19}/></div><p><strong>Informe PDF e IA</strong><span>Disponible en la pestaña Informe, tras analizar una escena.</span></p></div>
             </div>
           </div>
         </section>
