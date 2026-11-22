@@ -1,6 +1,13 @@
-# GeoMiner Bolivia · v0.1
+# GeoMiner Bolivia · v0.2
 
 **Plataforma de investigación geológica preliminar**, no un detector de oro ni un sistema de evaluación de reservas.
+
+## Novedades v0.2
+- Selector entre mapa CARTO y mosaico satelital Sentinel-2 **de 2016** (EOX, CC BY 4.0): histórico y NO una escena actual.
+- Búsqueda de terreno mediante centro GPS (latitud y longitud) con lado cuadrado de 1, 5, 10, 20 o 40 km.
+- Exportación del rectángulo seleccionado como GeoJSON o KML para GIS y GPS.
+- Filtro de nubosidad para las escenas candidatas devueltas por STAC.
+- Las imágenes más recientes consultadas en STAC siguen siendo solamente metadatos; visualizarlas exige integrar proceso de imágenes multibanda.
 
 ## Lo que YA funciona
 - Mapa interactivo (cartografía base de OpenStreetMap/CARTO).
@@ -14,7 +21,7 @@
 - No calcula índices minerales ni detecta anomalías; esto es para la siguiente fase.
 - No tiene cuentas de usuario, guardado en Supabase, IA, ni generación de informes.
 - No usa ni necesita claves de Copernicus para consultar el catálogo abierto. Descargar y procesar los datos requerirá una integración adicional.
-- El mapa actual es **cartográfico**, no imagen satelital.
+- Solo la vista **Satélite 2016** es un mosaico satelital real, pero antiguo; no es una escena contemporánea ni un análisis espectral de la parcela. La vista Mapa es cartográfica.
 
 ## Ejecutar en Mac o Windows
 
@@ -59,6 +66,11 @@ Sustituir USUARIO_DE_AMANDA por su nombre de usuario real; autenticar con GitHub
 
 ## OpenAI — siguiente etapa
 Utilizaremos **Responses API** desde backend seguro. Nunca poner `OPENAI_API_KEY` en variables con prefijo `VITE_`. El asistente interpretará resultados calculados por el motor geoespacial; no afirmará presencia de minerales sin verificación.
+
+## Licencias y limitaciones
+- Mosaico EOX Sentinel-2 cloudless 2016 © EOX IT Services GmbH (Contains modified Copernicus Sentinel data 2016), **CC BY 4.0**. Fuente: https://cloudless.eox.at/documentation/license
+- No sustituir por mosaicos 2018–2025 de EOX en un producto comercial sin licencia, pues se distribuyen bajo CC BY-NC-SA 4.0.
+- La disponibilidad del servicio público EOX puede variar y está sujeta a sus condiciones de servicio; revisar al crecer el tráfico.
 
 ## Fuentes oficiales
 - https://documentation.dataspace.copernicus.eu/APIs/STAC.html

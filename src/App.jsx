@@ -1,10 +1,11 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import maplibregl from 'maplibre-gl';
+import { squareFromCenter, bboxGeoJSON, bboxKml } from './geo.js';
 import {
   Satellite, MapPinned, Layers3, Map, Search, Compass, Mountain, Waves,
   Crosshair, ScanLine, Database, FileText, ChevronDown, ExternalLink,
   Cloud, CalendarDays, RefreshCcw, BookmarkPlus, Trash2, CheckCircle2,
-  AlertTriangle, Info, ArrowUpRight, LoaderCircle, Navigation, X, Menu
+  AlertTriangle, Info, ArrowUpRight, LoaderCircle, Navigation, X, Menu, Download, LocateFixed, Image as ImageIcon
 } from 'lucide-react';
 
 const CITIES = [
@@ -39,6 +40,11 @@ export default function App() {
   const [startPoint, setStartPoint] = useState(null);
   const [cursor, setCursor] = useState(null);
   const [city, setCity] = useState('Potosí');
+  const [baseLayer, setBaseLayer] = useState('streets');
+  const [gpsLat, setGpsLat] = useState('-19.572');
+  const [gpsLon, setGpsLon] = useState('-65.753');
+  const [gpsSide, setGpsSide] = useState('5');
+  const [cloudMax, setCloudMax] = useState('100');
   const [scenes, setScenes] = useState(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
@@ -46,6 +52,7 @@ export default function App() {
   const [activeTab, setActiveTab] = useState('scenes');
   const [mobilePanel, setMobilePanel] = useState(false);
   const area = useMemo(() => areaOf(bbox), [bbox]);
+  const visibleScenes = useMemo(() => (scenes?.scenes || []).filter(s => s.cloud !== null && s.cloud <= Number(cloudMax)), [scenes, cloudMax]);
 
   useEffect(() => {
     if (!mapContainer.current || map.current) return;
@@ -53,13 +60,14 @@ export default function App() {
       container: mapContainer.current,
       style: {
         version: 8,
-        sources: { 'carto': {
-          type: 'raster',
-          tiles: ['https://basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png'],
-          tileSize: 256,
-          attribution: '© OpenStreetMap contributors © CARTO'
-        }},
-        layers: [{ id:'base', type:'raster', source:'carto' }]
+        sources: {
+          'carto': { type:'raster', tiles:['https://basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png'], tileSize:256, attribution:'© OpenStreetMap contributors © CARTO' },
+          'satellite-2016': { type:'raster', tiles:['https://tiles.maps.eox.at/wmts/1.0.0/s2cloudless-2016_3857/default/g/{z}/{y}/{x}.jpg'], tileSize:256, maxzoom:13, attribution:'Sentinel-2 cloudless 2016 — EOX IT Services GmbH (Contains modified Copernicus Sentinel data 2016), CC BY 4.0' }
+        },
+        layers: [
+          { id:'base', type:'raster', source:'carto' },
+          { id:'satellite-2016-layer', type:'raster', source:'satellite-2016', layout:{visibility:'none'} }
+        ]
       },
       center: [-65.753,-19.572],
       zoom: 9,
@@ -102,6 +110,35 @@ export default function App() {
     if (instance.isStyleLoaded()) update(); else instance.once('load',update);
   }, [bbox]);
 
+  useEffect(() => {
+    const instance = map.current;
+    if (!instance) return;
+    const change = () => {
+      if (!instance.getLayer('base') || !instance.getLayer('satellite-2016-layer')) return;
+      instance.setLayoutProperty('base','visibility',baseLayer==='streets'?'visible':'none');
+      instance.setLayoutProperty('satellite-2016-layer','visibility',baseLayer==='historical'?'visible':'none');
+    };
+    if (instance.isStyleLoaded()) change(); else instance.once('load', change);
+  }, [baseLayer]);
+
+  function useGPS() {
+    try {
+      const b = squareFromCenter(gpsLon,gpsLat,gpsSide);
+      firstCorner.current=null; setStartPoint(null); setBbox(b); setScenes(null); setError('');
+      map.current?.fitBounds([[b[0],b[1]],[b[2],b[3]]],{padding:80,maxZoom:14,duration:650});
+      setMobilePanel(false);
+    } catch (err) { setError(err.message); setActiveTab('scenes'); }
+  }
+  function downloadArea(type) {
+    if (!bbox) return;
+    const content = type==='kml' ? bboxKml(bbox) : JSON.stringify(bboxGeoJSON(bbox),null,2);
+    const mime = type==='kml' ? 'application/vnd.google-earth.kml+xml' : 'application/geo+json';
+    const blob=new Blob([content],{type:mime+';charset=utf-8'});
+    const url=URL.createObjectURL(blob);
+    const a=document.createElement('a'); a.href=url; a.download='geominer-area.'+(type==='kml'?'kml':'geojson');
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(()=>URL.revokeObjectURL(url),1000);
+  }
   function goCity(c) {
     setCity(c.name);
     map.current?.flyTo({center:c.coords,zoom:c.zoom,essential:true});
@@ -170,11 +207,22 @@ export default function App() {
               <div><span>3</span>Consulta escenas satelitales reales.</div>
             </div>
           </div>
+          <div className="sidebar-card gps-card">
+            <div className="caption-label"><LocateFixed size={15}/> Seleccionar por GPS</div>
+            <div className="gps-fields">
+              <label>Latitud <input type="number" step="any" value={gpsLat} onChange={e=>setGpsLat(e.target.value)} /></label>
+              <label>Longitud <input type="number" step="any" value={gpsLon} onChange={e=>setGpsLon(e.target.value)} /></label>
+            </div>
+            <div className="gps-actions"><label>Lado del terreno
+              <select value={gpsSide} onChange={e=>setGpsSide(e.target.value)}><option value="1">1 km</option><option value="5">5 km</option><option value="10">10 km</option><option value="20">20 km</option><option value="40">40 km</option></select>
+            </label><button onClick={useGPS}><LocateFixed size={15}/> Aplicar</button></div>
+          </div>
           <div className="sidebar-card faint">
             <div className="caption-label"><ScanLine size={15}/> Área seleccionada</div>
             <div className="area-value">{bbox?fmt(area):'0'} <span>km²</span></div>
             <div className="area-sub">{startPoint?'Primera esquina marcada: selecciona la segunda.':bbox?'Terreno delimitado correctamente.':'Sin área seleccionada'}</div>
             {bbox&&<div className="coords-mini">{bbox.map(n=>n.toFixed(4)).join(' · ')}</div>}
+            {bbox&&<div className="export-actions"><button onClick={()=>downloadArea('geojson')}><Download size={14}/> GeoJSON</button><button onClick={()=>downloadArea('kml')}><Download size={14}/> KML</button></div>}
             <div className="actions-inline">
               <button onClick={reset} className="ghost-btn" disabled={!bbox&&!startPoint}><RefreshCcw size={14}/> Limpiar</button>
               <button onClick={saveArea} className="ghost-btn" disabled={!bbox}><BookmarkPlus size={14}/> Guardar</button>
@@ -186,7 +234,7 @@ export default function App() {
           </button>
           <div className="limit-note"><Info size={14}/><span>Consulta el catálogo oficial. La búsqueda aún no detecta minerales.</span></div>
         </div>
-        <div className="sidebar-foot"><span className="live-dot"/> GeoMiner v0.1 <span className="foot-right">PROTOTIPO</span></div>
+        <div className="sidebar-foot"><span className="live-dot"/> GeoMiner v0.2 <span className="foot-right">PROTOTIPO</span></div>
       </aside>
       <main className="main-area">
         <header className="topbar">
@@ -196,23 +244,24 @@ export default function App() {
           </div>
           <div className="topbar-meta">
             <span className="state-pill"><span className="live-dot"/> Catálogo Copernicus</span>
-            <span className="v-tag">Beta 0.1</span>
+            <span className="v-tag">Beta 0.2</span>
           </div>
         </header>
         <section className="work-area">
           <div className="map-column">
-            <div className="map-title"><div><strong>Mapa de exploración</strong><span>Bolivia · Cartografía base, sin análisis mineral</span></div>
-              <div className="map-tools"><span className="chip"><Map size={14}/> Cartografía</span><button className="small-square" title="Volver a Potosí" onClick={()=>goCity(CITIES[0])}><Navigation size={17}/></button></div>
+            <div className="map-title"><div><strong>Mapa de exploración</strong><span>Bolivia · Cartografía y mosaico satelital histórico</span></div>
+              <div className="map-tools"><div className="layer-switch"><button className={baseLayer==='streets'?'active':''} onClick={()=>setBaseLayer('streets')}><Map size={14}/> Mapa</button><button className={baseLayer==='historical'?'active':''} onClick={()=>setBaseLayer('historical')}><Satellite size={14}/> Satélite 2016</button></div><button className="small-square" title="Volver a Potosí" onClick={()=>goCity(CITIES[0])}><Navigation size={17}/></button></div>
             </div>
             <div className="map-wrap">
               <div ref={mapContainer} className="map"/>
               <div className="map-tip"><Crosshair size={16}/><span>{startPoint?'Selecciona la segunda esquina':bbox?'Área delimitada · puedes consultar escenas':'Dos clics para delimitar tu terreno'}</span></div>
               <div className="map-legend"><span className="legend-swatch"/> Área seleccionada</div>
+              {baseLayer==='historical'&&<div className="map-history-warning">Mosaico Sentinel-2 de 2016 · Referencia histórica, no escena actual ni detección mineral.</div>}
               {cursor&&<div className="coordinates">LAT {cursor[0]} · LON {cursor[1]}</div>}
             </div>
             <div className="map-bottom">
               <div><Info size={16}/><span>Los límites dibujados son aproximados; no equivalen a derechos mineros ni catastros oficiales.</span></div>
-              <span>Fuente del mapa: OpenStreetMap / CARTO</span>
+              <span>{baseLayer==='historical'?'Sentinel-2 2016 © EOX, CC BY 4.0':'OpenStreetMap / CARTO'}</span>
             </div>
           </div>
           <div className="inspector">
@@ -230,16 +279,17 @@ export default function App() {
                 {!scenes && !busy && <div className="empty-state"><div className="empty-illustration"><Satellite size={38}/><span/></div><strong>Tu investigación comienza aquí</strong><p>Selecciona dos puntos en el mapa y consulta las escenas Sentinel-2 disponibles en Copernicus.</p><div className="empty-source"><Database size={16}/> Datos oficiales, no simulados</div></div>}
                 {busy&&<div className="empty-state"><LoaderCircle size={36} className="spin muted"/><strong>Consultando Copernicus</strong><p>Buscando escenas satelitales reales del último año para tu selección.</p></div>}
                 {scenes&&<div className="scene-results">
-                  <div className="result-head"><CheckCircle2 size={20}/><div><strong>{scenes.scenes.length} escenas seleccionadas</strong><small>Se revisaron {scenes.examined} registros del catálogo</small></div></div>
+                  <div className="result-head"><CheckCircle2 size={20}/><div><strong>{scenes.scenes.length} escenas candidatas</strong><small>Se revisaron {scenes.examined} registros del catálogo</small></div></div>
                   <div className="result-stats"><div><small>Superficie</small><strong>{fmt(scenes.areaKm2)} km²</strong></div><div><small>Período</small><strong>Últimos 12 meses</strong></div></div>
                   <p className="result-note">{scenes.note}</p>
-                  {scenes.scenes.length===0?<p className="no-results">No se encontraron escenas en el intervalo consultado.</p>:(
-                    <div className="scene-list">{scenes.scenes.map((scene,index)=><div className="scene" key={scene.id||index}>
+                  <div className="cloud-filter"><label htmlFor="cloudMax">Nubosidad máxima de la escena</label><select id="cloudMax" value={cloudMax} onChange={e=>setCloudMax(e.target.value)}><option value="100">Todas (con dato)</option><option value="10">Hasta 10%</option><option value="20">Hasta 20%</option><option value="40">Hasta 40%</option><option value="70">Hasta 70%</option></select></div>
+                  {visibleScenes.length===0?<p className="no-results">No se encontraron escenas con el filtro indicado. Prueba otro porcentaje de nubosidad.</p>:(
+                    <div className="scene-list">{visibleScenes.map((scene,index)=><div className="scene" key={scene.id||index}>
                       <div className="scene-icon"><Satellite size={17}/></div><div className="scene-text"><strong>{dateStr(scene.date)}</strong><small>{scene.platform} · L2A</small></div>
                       <div className="cloud-label"><Cloud size={14}/>{scene.cloud===null?'s/d':scene.cloud+'%'}</div>
                     </div>)}</div>
                   )}
-                  <a className="source-link" href="https://browser.dataspace.copernicus.eu/" target="_blank" rel="noreferrer">Abrir navegador Copernicus <ExternalLink size={14}/></a>
+                  <a className="source-link" href="https://browser.dataspace.copernicus.eu/" target="_blank" rel="noreferrer">Examinar imagen original en Copernicus <ExternalLink size={14}/></a>
                 </div>}
               </div>
             ):(
