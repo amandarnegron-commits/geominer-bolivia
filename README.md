@@ -1,4 +1,4 @@
-# GeoMiner Bolivia · v0.8 — Cerro Rico de Potosí
+# GeoMiner Bolivia · v0.9 — Cerro Rico de Potosí
 
 Prototipo de análisis satelital **preliminar**. El programa procesa datos públicos Sentinel-2 L2A (COGs Element84), mapas y bibliografía del Cerro Rico. **No demuestra** minerales específicos, leyes, reservas, rentabilidad ni derechos mineros. No usar mapas como permisos o rutas de ingreso al Cerro Rico.
 
@@ -54,3 +54,27 @@ Fuentes oficiales y documentos: https://s2.pages.eopf.copernicus.eu/msi/s2msi/1.
 ## Calidad técnica
 
 `npm test` incluye las pruebas de v0.1–v0.7 y pruebas de v0.8 de resolución, bandas opcionales, composición de falso color, áreas vecinas, protección de acceso y envío opcional de miniaturas. Las pruebas automatizadas no equivalen a verificación geológica de las escenas.
+
+## GeoMiner v0.9 — Dictamen claro por sector
+
+Esta actualización incorpora un **dictamen operacional reproducible** antes de llamar a OpenAI. En **Informe** ahora aparece si se detectaron grupos relativos P90, contexto histórico del distrito, qué falta para confirmar mineralización y qué información sería necesaria para estimar potencial económico. La plataforma separa esas cuatro preguntas para impedir que una conclusión vaga o inventada sustituya los datos.
+
+Cada sector obtiene prioridad de revisión **Alta / Media / Inicial / Por verificar** usando: proximidad de respuestas elevadas B4/B2 y B11/B12; repetición local de respuesta P90 en una segunda fecha del mismo terreno; y cobertura válida. **No es porcentaje de éxito, probabilidad de presencia de mineral ni recomendación de invertir, excavar o ingresar al Cerro Rico.** La clasificación se recalcula con las escenas y el terreno; puede cambiar al seleccionar otras fechas.
+
+Se incluye automáticamente en PDF, sin tokens ni clave API. OpenAI, si se activa, recibe una versión saneada del dictamen y redacta respuestas más concretas sin inventar hallazgos.
+
+### Instalación de v0.9 sobre v0.8
+
+```bash
+cd ~/Downloads/geominer-bolivia
+unzip -o ~/Downloads/GeoMiner_Bolivia_v0.9_actualizacion_desde_v0.8.zip -d .
+npm install
+npm test
+npm run build
+```
+
+Publicar después mediante GitHub Desktop: Commit to main → Push origin. Vercel despliega la actualización y mantiene las variables ya configuradas.
+
+### Próxima etapa de validación de potencial minero
+
+Para acercarnos a predicciones de prospectividad mineral con respaldo necesitamos: separar superficies urbanas/escombreras; una base espacial de ocurrencias minerales contrastadas y controles de no ocurrencia; mapas geológicos y alteración de escala adecuada; corrección de topografía/atmósfera; datos hiperespectrales si cubren el área (por ejemplo EMIT/PRISMA); controles de validación de área distinta a las zonas de entrenamiento; ensayos geoquímicos y revisión profesional. Una etiqueta binaria de mineral en puntos concretos requiere estas evidencias adicionales y métricas de error conocidas.

@@ -118,7 +118,8 @@ export default function App() {
       secondSceneId:compareOutput.scene.id, secondDate:compareOutput.scene.date,
       grid:temporalComparison.grid,metrics:temporalComparison.metrics
     }:null,
-    control:controlSummary&&controlResult?{...controlSummary,bbox:controlResult.bbox,date:analysisScene.date,sceneId:analysisScene.id}:null
+    control:controlSummary&&controlResult?{...controlSummary,bbox:controlResult.bbox,date:analysisScene.date,sceneId:analysisScene.id}:null,
+    secondResult:compareOutput?.result||null
   }):null,[analysisResult,bbox,analysisScene,city,temporalComparison,compareOutput,controlSummary,controlResult]);
   function clearSpectral() {
     abortAnalysis.current?.abort();
@@ -259,7 +260,8 @@ export default function App() {
     for(const zone of zones){
       const button=document.createElement('button');
       button.type='button';
-      button.className='anomaly-map-marker '+(indicator==='iron'?'iron':'swir')+(zone.id===selectedZoneId?' chosen':'');
+      const check=preparedReport?.decision?.zones?.find(z=>z.kind===indicator&&z.number===zone.number);
+      button.className='anomaly-map-marker '+(indicator==='iron'?'iron':'swir')+(zone.id===selectedZoneId?' chosen':'')+(check?.priority==='Alta'?' evidence-high':'');
       button.textContent=String(zone.number);
       button.title='Sector '+zone.number+' · índice '+zone.peakRatio+' · Lat '+zone.lat+', Lon '+zone.lon;
       button.setAttribute('aria-label',button.title);
@@ -271,7 +273,7 @@ export default function App() {
       zoneMarkers.current.push(new maplibregl.Marker({element:button,anchor:'center'}).setLngLat([zone.lon,zone.lat]).addTo(instance));
     }
     return clean;
-  },[zones,indicator,selectedZoneId,showZoneMarkers,analysisResult]);
+  },[zones,indicator,selectedZoneId,showZoneMarkers,analysisResult,preparedReport]);
 
   function focusZone(zone){
     setSelectedZoneId(zone.id);setActiveTab('anomalies');
@@ -534,7 +536,7 @@ export default function App() {
           </button>
           <div className="limit-note"><Info size={14}/><span>Hasta 25 km² para análisis multiespectral gratuito. Los índices no identifican yacimientos.</span></div>
         </div>
-        <div className="sidebar-foot"><span className="live-dot"/> GeoMiner v0.8 <span className="foot-right">PROTOTIPO</span></div>
+        <div className="sidebar-foot"><span className="live-dot"/> GeoMiner v0.9 <span className="foot-right">PROTOTIPO</span></div>
       </aside>
       <main className="main-area">
         <header className="topbar">
@@ -608,7 +610,7 @@ export default function App() {
                     <div className="anomaly-list">{zones.map(z=><button type="button" key={z.id} className={'anomaly-item '+(selectedZoneId===z.id?'chosen':'')} onClick={()=>focusZone(z)}>
                       <span className={'anomaly-rank '+indicator}>{z.number}</span><span className="anomaly-item-text"><strong>Sector {z.number} · Índice {z.peakRatio.toFixed(3)}</strong><small>{z.lat.toFixed(6)}, {z.lon.toFixed(6)}</small><small>{z.pixels} píxeles conectados · área aprox. {z.approxAreaKm2.toFixed(3)} km²</small></span><Navigation size={15}/>
                     </button>)}</div>}
-                  {selectedZone&&<div className="anomaly-detail"><strong>Sector {selectedZone.number} · Referencia GPS</strong><div className="anomaly-gps">Latitud: {selectedZone.lat.toFixed(6)}<br/>Longitud: {selectedZone.lon.toFixed(6)}</div><div className="anomaly-metrics">Máximo: {selectedZone.peakRatio.toFixed(4)} · Media: {selectedZone.meanRatio.toFixed(4)} · Umbral P90: {selectedZone.threshold.toFixed(4)}</div><button type="button" className="spectral-export" onClick={()=>copyZone(selectedZone)}><Crosshair size={15}/> Copiar coordenadas</button><button type="button" className="spectral-export" onClick={()=>setActiveTab('validation')}><CheckCircle2 size={15}/> Registrar revisión del sector</button></div>}
+                  {selectedZone&&<div className="anomaly-detail"><strong>Sector {selectedZone.number} · Referencia GPS</strong>{preparedReport?.decision?.zones?.filter(d=>d.kind===indicator&&d.number===selectedZone.number).map(d=><div key={d.kind+d.number} className="evidence-zone-hint">Prioridad de revisión: <strong>{d.priority}</strong> · Índice adicional: {d.cooccurrence==='si'?'sí':d.cooccurrence==='no'?'no detectado':'sin datos'} · Segunda fecha: {d.temporal==='si'?'coincide':d.temporal==='no_evaluado'?'sin evaluar':d.temporal==='no'?'no coincide':'sin datos'}</div>)}<div className="anomaly-gps">Latitud: {selectedZone.lat.toFixed(6)}<br/>Longitud: {selectedZone.lon.toFixed(6)}</div><div className="anomaly-metrics">Máximo: {selectedZone.peakRatio.toFixed(4)} · Media: {selectedZone.meanRatio.toFixed(4)} · Umbral P90: {selectedZone.threshold.toFixed(4)}</div><button type="button" className="spectral-export" onClick={()=>copyZone(selectedZone)}><Crosshair size={15}/> Copiar coordenadas</button><button type="button" className="spectral-export" onClick={()=>setActiveTab('validation')}><CheckCircle2 size={15}/> Registrar revisión del sector</button></div>}
                   <button type="button" className="spectral-export anomaly-download" onClick={downloadZones} disabled={!zones.length}><Download size={15}/> Exportar sectores como GeoJSON</button>
                   <p className="spectral-footnote">Los puntos corresponden a centros aproximados de píxeles en una cuadrícula de 96 × 96, NO a GPS medido en terreno. El orden indica índice máximo relativo, no calidad del yacimiento. No se emplearon aún mapas geológicos externos para validar los grupos.</p>
                 </div>}
@@ -655,7 +657,23 @@ export default function App() {
                       <div><small>Escena</small><strong>{dateStr(preparedReport.scene.date)}</strong></div>
                       <div><small>Suelo útil</small><strong>{preparedReport.grid.usablePct}%</strong></div>
                     </div>
-                    <p className="report-notice">Este informe incluye hasta 10 sectores por índice, con coordenadas aproximadas y datos numéricos. NO identifica oro, plata ni reservas. Descargar el PDF sin IA no consume tokens.</p>
+                    {preparedReport.decision&&<div className="evidence-verdict" aria-label="Dictamen técnico operativo">
+                      <strong>Dictamen operativo de los datos</strong>
+                      <div className="evidence-answer"><span>¿Hay señales espectrales elevadas?</span><b>{preparedReport.decision.spectralAnswer}</b></div>
+                      <div className="evidence-answer"><span>¿Existe mineralización histórica documentada en el distrito?</span><b>{preparedReport.decision.districtEvidence}</b></div>
+                      <div className="evidence-answer"><span>¿El satélite confirmó mineral en estos puntos?</span><b>{preparedReport.decision.mineralAnswer}</b></div>
+                      <div className="evidence-answer"><span>¿Se conoce su potencial económico?</span><b>{preparedReport.decision.economicAnswer}</b></div>
+                      <strong>Sectores priorizados para revisión</strong>
+                      <p>Priorización relativa basada en coincidencia de índices y repetición entre escenas. No es una probabilidad de yacimiento ni recomendación de ingreso.</p>
+                      <div className="evidence-places">{preparedReport.decision.zones.slice(0,8).map(z=><button type="button" key={z.kind+z.number} onClick={()=>{setIndicator(z.kind);const item=(preparedReport.zones?.[z.kind]||[]).find(p=>p.number===z.number);if(item)focusZone(item);}}>
+                        <span className={'evidence-priority '+(z.priority==='Alta'?'major':z.priority==='Media'?'moderate':'base')}>{z.priority}</span>
+                        <strong>{z.kind==='iron'?'F':'S'}-{z.number}</strong>
+                        <small>{z.lat.toFixed(5)}, {z.lon.toFixed(5)}</small>
+                        <small>{z.cooccurrence==='si'?'Ambos índices':'Índice principal'} · {z.temporal==='si'?'repetido en 2 fechas':z.temporal==='no_evaluado'?'sin 2.ª fecha':'sin coincidencia temporal demostrada'}</small>
+                      </button>)}</div>
+                      {!preparedReport.decision.zones.length&&<p>No se obtuvieron grupos válidos. Revisa la calidad de la escena y los filtros.</p>}
+                    </div>}
+                    <p className="report-notice">Diagnóstico basado en Sentinel-2, sin validación de mineral en laboratorio. El informe PDF es gratuito y no consume tokens de OpenAI.</p>
                     <div className="report-zone-totals"><span>Respuesta férrica: <strong>{preparedReport.zones?.iron?.length??0} sectores</strong></span><span>Respuesta SWIR: <strong>{preparedReport.zones?.clay?.length??0} sectores</strong></span></div>
                     <div className="report-validation-note">{controlSummary?'Contraste con área vecina procesado. ':'Sin control geográfico todavía. '}{temporalComparison ? `Comparación temporal realizada: ${temporalComparison.grid.sharedPct}% de celdas compartidas. Los resultados se incorporarán al PDF.` : 'Comparación temporal pendiente: disponible en «Validar».'} {activeAreaNotes.length} anotaciones locales.</div>
                     <button type="button" className="run-btn pdf-export" onClick={downloadPdf}><Download size={17}/> Descargar informe PDF gratuito</button>
@@ -674,7 +692,7 @@ export default function App() {
               </div>
             ) : activeTab==='analysis' ? (
               <div className="panel-inner spectral-panel">
-                <div className="spectral-intro"><Layers3 size={19}/><div><strong>Prospección espectral preliminar v0.8</strong><p>Sentinel-2 L2A · B2/B3/B4/B8/B11/B12, bandas red-edge opcionales y SCL. No es detección de minerales.</p></div></div>
+                <div className="spectral-intro"><Layers3 size={19}/><div><strong>Prospección espectral preliminar v0.9</strong><p>Sentinel-2 L2A · B2/B3/B4/B8/B11/B12, bandas red-edge opcionales y SCL. No es detección de minerales.</p></div></div>
                 {!bbox&&<div className="empty-state compact"><Crosshair size={31} className="muted"/><strong>Selecciona tu terreno</strong><p>Delimita un terreno con GPS o dos clics en el mapa. Después busca escenas para analizar.</p></div>}
                 {bbox&&area>25.01&&<div className="error-box"><Info size={17}/> Elige 5 × 5 km o menos para el procesamiento inicial. Área actual: {fmt(area)} km².</div>}
                 {bbox&&area<=25.01&&<div className="spectral-step"><strong>1. Buscar imágenes multiespectrales</strong><button type="button" onClick={findAnalysisScenes} disabled={analysisBusy}>Consultar escenas gratuitas</button></div>}

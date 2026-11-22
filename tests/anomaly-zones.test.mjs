@@ -42,7 +42,7 @@ test('GeoJSON conserva el índice, el punto GPS y la advertencia',()=>{
 });
 test('el PDF obtiene sectores de ambas bandas desde datos numéricos, sin API',()=>{
  const report=prepareReport({bbox,region:'Potosí',scene:{id:'sentinel-2-l2a-2026-10-18',date:'2026-10-18T10:00:00Z',platform:'sentinel-2a',cloud:0},result:grid()});
- assert.equal(report.version,'0.8');
+ assert.equal(report.version,'0.9');
  assert.ok(report.zones.iron.length>0);
  assert.equal(report.zones.iron[0].lat,detectAnomalyZones(grid(),bbox,'iron')[0].lat);
  assert.match(report.methods.join(' '),/al menos 3 píxeles/);

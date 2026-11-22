@@ -2,19 +2,27 @@ import { statsFor, exportTopPoints } from './indices.js';
 import {minimumGroupPixels} from './resolution.js';
 import { detectAnomalyZones } from './anomaly-zones.js';
 import { geologyContextFor } from './cerro-rico.js';
+import { buildEvidenceDecision } from './evidence-decision.js';
 
 const fixed = (n, digits = 4) => Number.isFinite(n) ? Number(n.toFixed(digits)) : null;
 
 /** Solo hechos reproducibles: el texto interpretativo lo genera el servidor (opcionalmente). */
-export function prepareReport({ bbox, region, scene, result, temporal=null, control=null }) {
+export function prepareReport({ bbox, region, scene, result, temporal=null, control=null, secondResult=null }) {
   if (!Array.isArray(bbox) || bbox.length !== 4 || !scene?.id || !result?.width || !result?.height)
     throw new Error('Primero delimita un terreno y procesa una escena satelital.');
   const [w,s,e,n] = bbox;
   const area = Math.abs((n-s)*111.32*(e-w)*111.32*Math.cos((n+s)*Math.PI/360));
   const iron = statsFor(result.iron), clay = statsFor(result.clay);
   const fraction = result.total ? result.valid / result.total : 0;
+  const geologicalContext=geologyContextFor(bbox);
+  const zones={
+    iron:detectAnomalyZones(result,bbox,'iron',{minPixels:minimumGroupPixels(result),limit:10}),
+    clay:detectAnomalyZones(result,bbox,'clay',{minPixels:minimumGroupPixels(result),limit:10})
+  };
+  const decision=buildEvidenceDecision({result,bbox,zones,secondResult,geologicalContext});
   return {
-    version: '0.8',
+    version: '0.9',
+    decision,
     generatedAt: new Date().toISOString(),
     region: String(region || 'Bolivia').slice(0,80),
     bbox: bbox.map(x => fixed(x,6)),
@@ -35,17 +43,14 @@ export function prepareReport({ bbox, region, scene, result, temporal=null, cont
       ferrous: result.ferrous?{formula:'B11/B8A',...Object.fromEntries(['p50','p75','p90'].map(k=>[k,fixed(statsFor(result.ferrous)[k])]))}:null,
       rededge: result.rededge?{formula:'B7/B5',...Object.fromEntries(['p50','p75','p90'].map(k=>[k,fixed(statsFor(result.rededge)[k])]))}:null
     },
-    geologicalContext: geologyContextFor(bbox),
+    geologicalContext,
     temporal,
     control,
     points: {
       iron: exportTopPoints(result,bbox,'iron',5).features.map(x=>({lat:x.geometry.coordinates[1],lon:x.geometry.coordinates[0],ratio:x.properties.ratio})),
       clay: exportTopPoints(result,bbox,'clay',5).features.map(x=>({lat:x.geometry.coordinates[1],lon:x.geometry.coordinates[0],ratio:x.properties.ratio}))
     },
-    zones: {
-      iron: detectAnomalyZones(result,bbox,'iron',{minPixels:minimumGroupPixels(result),limit:10}),
-      clay: detectAnomalyZones(result,bbox,'clay',{minPixels:minimumGroupPixels(result),limit:10})
-    },
+    zones,
     methods: [
       'B4/B2 es un cociente de reflectancias de superficie, indicador exploratorio de respuesta férrica.',
       'B11/B12 es un cociente SWIR que puede responder a varios materiales y condiciones; NO identifica por sí solo minerales de arcilla.',

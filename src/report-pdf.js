@@ -42,6 +42,19 @@ export function downloadReportPdf(report,{aiText='',heatmapUrl=null,indicator='i
     row(label,'P50 '+readable(entry.p50)+' | P75 '+readable(entry.p75)+' | P90 '+readable(entry.p90));
   }
   for(const kind of ['ferrous','rededge']){const item=report.indices?.[kind];if(item?.p50!==null&&item?.p50!==undefined)row('Indice auxiliar '+item.formula, 'P50 '+readable(item.p50)+' | P90 '+readable(item.p90));}
+  if(report.decision){
+    heading('Dictamen operativo: SI / NO / NO EVALUABLE');
+    para('Anomalias espectrales: '+readable(report.decision.spectralAnswer),{size:10,bold:true,color:green,after:4});
+    para('Mineralizacion historica regional: '+readable(report.decision.districtEvidence),{size:9,after:3});
+    para('Mineral confirmado en sectores: '+readable(report.decision.mineralAnswer),{size:9,after:3});
+    para('Potencial economico: '+readable(report.decision.economicAnswer),{size:9,after:3});
+    heading('Sectores ordenados para revision, NO por probabilidad');
+    for(const z of report.decision.zones.slice(0,12)){
+      para((z.kind==='iron'?'F-':'S-')+z.number+' | '+z.priority+' | '+z.lat+', '+z.lon+
+        ' | Otro indice: '+z.cooccurrence+' | Segunda fecha: '+z.temporal,{size:9,after:2});
+    }
+    para('Criterios: '+report.decision.priorityMethod,{size:8,color:muted});
+  }
   heading('3. Sectores de respuesta espectral relativa (GPS aproximado)');
   for(const [kind,label] of [['iron','Respuesta ferrica B4/B2'],['clay','Respuesta SWIR B11/B12']]){
     const zones=report.zones?.[kind]||[];
@@ -112,6 +125,6 @@ export function downloadReportPdf(report,{aiText='',heatmapUrl=null,indicator='i
   para(report.disclaimer,{size:10,bold:true,color:[148,63,44],after:4});
   para('Se recomienda inspeccion de campo, cartografia geologica y analisis de laboratorio antes de tomar decisiones de inversion.',{size:9,color:muted});
   const pages=pdf.getNumberOfPages();
-  for(let i=1;i<=pages;i++){pdf.setPage(i);pdf.setFontSize(8);pdf.setTextColor(132,150,155);pdf.text('GeoMiner Bolivia v0.8 | Estudio preliminar | Pag. '+i+' / '+pages,M,288);}
+  for(let i=1;i<=pages;i++){pdf.setPage(i);pdf.setFontSize(8);pdf.setTextColor(132,150,155);pdf.text('GeoMiner Bolivia v0.9 | Estudio preliminar | Pag. '+i+' / '+pages,M,288);}
   pdf.save('GeoMiner_Informe_'+(report.scene.date||'escena').slice(0,10)+'.pdf');
 }
