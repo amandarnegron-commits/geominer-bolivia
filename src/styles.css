@@ -275,3 +275,11 @@ h1{font-family:Manrope,sans-serif;font-size:23px;color:#18313d;margin:0;letter-s
 .study-progress p{font-size:10px;line-height:1.5;margin:6px 0 0}
 @media(max-width:700px){.inspector-tabs{padding:0 8px}.inspector-tabs button{font-size:10px}.study-progress small{flex-basis:84px}}
 .gps-error{font-size:11px;line-height:1.5;margin:9px 0 0;padding:8px 10px;border-radius:7px;background:#723b38;color:#fff2ed}
+
+/* v1.4: estado de las fuentes sin aumentar la cantidad de botones principales. */
+.research-audit {border:1px solid #b4d8d0;background:rgba(15,134,116,.075);border-radius:12px;padding:12px 14px;margin:12px 0;color:inherit}
+.research-audit > strong {display:block;margin-bottom:7px}
+.research-audit p {font-size:.88rem;line-height:1.5;margin:5px 0}
+.research-audit summary {font-weight:600;cursor:pointer;margin:10px 0 7px}
+.research-audit ul {padding-left:19px;margin:6px 0 12px}
+.research-audit li {margin:5px 0;font-size:.85rem;line-height:1.4}

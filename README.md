@@ -1,4 +1,4 @@
-# GeoMiner Bolivia v1.3 — motor de gabinete por coordenadas
+# GeoMiner Bolivia v1.4 — evidencia de gabinete y PDF profesional
 
 La plataforma sigue usando Sentinel-2 para calcular índices espectrales y sectores; además consulta **fuentes geológicas y catálogos hiperespectrales independientes** desde el backend, sin pedir que el usuario pegue páginas de un informe antiguo.
 
@@ -30,3 +30,7 @@ Nunca interpreta un *servidor no disponible* como *cero depósitos*. Una carta g
 - `lib/report-api.js`: envía resúmenes de las fuentes consultadas a OpenAI con limitaciones explícitas.
 
 Consulta `CHANGELOG_v1.3.md` para límites comerciales y fuentes. **No está listo aún como informe geológico certificable o plataforma comercial autónoma.**
+
+
+## Cambios v1.4
+Consulta `CHANGELOG_v1.4.md`. Descarga evidencia real consultada desde Estudio geológico > Datos y verificaciones pendientes.

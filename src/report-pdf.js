@@ -2,22 +2,28 @@
 import { jsPDF } from 'jspdf';
 import { aiBlocks } from './ai-text.js';
 import { reportPlateManifest } from './geological-study.js';
+import { evidenceAudit } from './study-readiness.js';
 
 const readable = value => value===null||value===undefined?'s/d':String(value);
 export function downloadReportPdf(report,{aiText='',heatmapUrl=null,indicator='iron',validation=null,fieldNotes=[],geologyEvidence=[],geoMatches=[],autoResearch=null,autoGeoMatches=[],autoGeologyMapPng=null,studyPlates=[],studyManifest=null,geologyMapPng=null}={}){
   if(!report?.scene?.id)throw new Error('El informe necesita datos espectrales ya procesados.');
   const pdf=new jsPDF({unit:'mm',format:'a4'});
   const dark=[24,48,61],green=[22,132,110],muted=[94,112,119];
-  const W=210,M=17,limit=278;let y=20;
+  const W=210,M=17,limit=274;let y=20;
+  // 13 mm de margen antes del pie y 20 mm en la parte superior de cada pagina.
   function page(){pdf.addPage();y=20;}
+  function ensureRoom(height){if(y+height>limit)page();}
   function lines(text,font=10){pdf.setFontSize(font);return pdf.splitTextToSize(String(text).replaceAll('—','-').replaceAll('≥','>='),W-2*M);}
   function para(text,{size=10,color=dark,bold=false,after=5}={}){
     pdf.setFont('helvetica',bold?'bold':'normal');pdf.setTextColor(...color);
     const ls=lines(text,size);const step=size*.46+1.7;
-    for(const line of ls){if(y+step>limit)page();pdf.setFontSize(size);pdf.text(line,M,y);y+=step;}
-    y+=after;
+    // Evita cortar una frase por el cambio de pagina cuando el parrafo cabe completo.
+    const fullHeight=ls.length*step+after;
+    if(fullHeight<=limit-20)ensureRoom(fullHeight);
+    for(const line of ls){ensureRoom(step);pdf.setFontSize(size);pdf.text(line,M,y);y+=step;}
+    if(y+after>limit)page();else y+=after;
   }
-  function heading(text){if(y>260)page();pdf.setDrawColor(207,229,220);pdf.line(M,y-2,W-M,y-2);y+=5;para(text,{size:12,bold:true,color:green,after:3});}
+  function heading(text){ensureRoom(26);pdf.setDrawColor(207,229,220);pdf.line(M,y-2,W-M,y-2);y+=5;para(text,{size:12,bold:true,color:green,after:3});}
   function row(label,value){para(label+': '+readable(value),{size:10,after:1});}
   pdf.setFillColor(17,40,57);pdf.rect(0,0,W,39,'F');
   pdf.setTextColor(255,255,255);pdf.setFont('helvetica','bold');pdf.setFontSize(19);pdf.text('GEOMINER BOLIVIA',M,20);
@@ -149,11 +155,16 @@ export function downloadReportPdf(report,{aiText='',heatmapUrl=null,indicator='i
     catch{para('No fue posible incluir el mapa publico en PDF.',{size:9,color:muted});}
   }
   if(autoResearch){
+    heading('Estado de evidencia obtenida automaticamente');
+    const audit=evidenceAudit({report,research:autoResearch,matches:autoGeoMatches});
+    para('Tipo de estudio: '+audit.level,{size:10,bold:true,color:green,after:2});
+    para('Los inventarios EnMAP/EMIT NO son productos mineralogicos procesados. La presencia de escenas en catalogo NO significa que se identificaron minerales.',{size:9,color:muted});
     heading('Investigacion automatica por coordenadas - fuentes verificables');
     row('Consulta',autoResearch.queriedAt||'s/d');
     const services=autoResearch.services||{};
     for(const [key,label] of [['geology','Unidades geologicas'],['faults','Fallas'],['anticlines','Anticlinales'],['synclines','Sinclinales'],['enmap','EnMAP (inventario)'],['emit','EMIT (inventario)']]){
-      const entry=services[key];row(label,!entry?'Sin consulta':entry.status==='ok'?String(entry.count||0)+' elementos consultados':'Servicio externo no disponible');
+      const entry=services[key],catalog=key==='emit'||key==='enmap';
+      row(label,!entry?'Sin consulta':entry.status!=='ok'?'Servicio externo no disponible':!entry.count?'Consulta sin registros':String(entry.count)+(catalog?' fichas de inventario sin procesar':' entidades cartograficas descargadas'));
     }
     const geol=services.geology;
     if(geol?.status==='ok'){
@@ -174,7 +185,9 @@ export function downloadReportPdf(report,{aiText='',heatmapUrl=null,indicator='i
       }
       y+=43;para('Perfil topografico, NO corte geologico del subsuelo. API publica usada solo para pruebas; uso comercial requiere servicio propio o licencia.',{size:8,color:muted});
     }
-    para('EnMAP/EMIT: el inventario confirma solo metadatos encontrados, no procesamiento mineralogico. Datos sin cobertura quedan como faltantes.',{size:8,color:muted});
+    heading('Verificaciones pendientes para completar el estudio');
+    for(const action of audit.actions)para('- '+action,{size:9,after:3});
+    para('Los controles anteriores son actividades aun no ejecutadas. No constituyen resultados adicionales del satelite.',{size:8,color:muted});
   }
   heading('5. Metodologia y limites');
   for(const item of report.methods)para('- '+item,{size:9,after:2});
@@ -212,6 +225,6 @@ export function downloadReportPdf(report,{aiText='',heatmapUrl=null,indicator='i
     }
   }
   const pages=pdf.getNumberOfPages();
-  for(let i=1;i<=pages;i++){pdf.setPage(i);pdf.setFontSize(8);pdf.setTextColor(132,150,155);pdf.text('GeoMiner Bolivia v1.3 | Estudio geologico de gabinete | Pag. '+i+' / '+pages,M,288);}
+  for(let i=1;i<=pages;i++){pdf.setPage(i);pdf.setFontSize(8);pdf.setTextColor(132,150,155);pdf.text('GeoMiner Bolivia v1.4 | Estudio de gabinete | Pag. '+i+' / '+pages,M,290);}
   pdf.save('GeoMiner_Informe_'+(report.scene.date||'escena').slice(0,10)+'.pdf');
 }

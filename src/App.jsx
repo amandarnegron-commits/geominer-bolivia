@@ -15,6 +15,7 @@ import { neighbouringBbox, controlAreaComparison } from './control-area.js';
 import { falseColorRGBA } from './false-color.js';
 import { minimumGroupPixels } from './resolution.js';
 import { GEO_PLATE_TYPES, reportPlateManifest } from './geological-study.js';
+import { evidenceAudit, prepareEvidenceBundle } from './study-readiness.js';
 import { createGeologyMapImage } from './geological-map.js';
 import {
   Satellite, MapPinned, Layers3, Map, Search, Compass, Mountain, Waves,
@@ -156,6 +157,7 @@ export default function App() {
   const activeGeoMap=useMemo(()=>importedGeoAreaKey===areaEvidenceKey(bbox)?importedGeoMap:null,[importedGeoMap,importedGeoAreaKey,bbox]);
   const autoGeoMap=autoResearch?.services?.geology?.status==='ok'?autoResearch.services.geology.features:null;
   const autoGeoMatches=useMemo(()=>autoGeoMap&&preparedReport?.zones?matchGeologyToSectors(autoGeoMap,preparedReport.zones,'GeoBolivia/SERGEOTECMIN, mapa nacional 2000'):[],[autoGeoMap,preparedReport]);
+  const researchAudit=useMemo(()=>evidenceAudit({report:preparedReport,research:autoResearch,matches:autoGeoMatches}),[preparedReport,autoResearch,autoGeoMatches]);
   const geoMatches=useMemo(()=>activeGeoMap&&preparedReport?.zones?
     matchGeologyToSectors(activeGeoMap,preparedReport.zones,importedGeoSource):[],[activeGeoMap,preparedReport,importedGeoSource]);
   const studyManifest=useMemo(()=>reportPlateManifest({plates:activePlates,geoMatches,evidence:activeGeologyEvidence,fieldNotes:activeAreaNotes}),[activePlates,geoMatches,activeGeologyEvidence,activeAreaNotes]);
@@ -193,6 +195,15 @@ export default function App() {
       setAutoResearch(payload);setAiText('');setAiUsage(null);
     }catch(err){setResearchError(err.message||'Error consultando fuentes geológicas');}
     finally{setResearchBusy(false);}
+  }
+  function downloadResearchEvidence(){
+    try{
+      const bundle=prepareEvidenceBundle({report:preparedReport,research:autoResearch,matches:autoGeoMatches});
+      const blob=new Blob([JSON.stringify(bundle,null,2)],{type:'application/json;charset=utf-8'});
+      const url=URL.createObjectURL(blob);
+      const a=document.createElement('a');a.href=url;a.download='GeoMiner_Datos_Geologicos_'+(autoResearch.queriedAt||'consulta').slice(0,10)+'.json';
+      document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),1000);
+    }catch(err){setResearchError(err?.message||'No se pudieron exportar los datos.');}
   }
   function clearSpectral() {
     abortAnalysis.current?.abort();
@@ -662,7 +673,7 @@ export default function App() {
           </div>
           <div className="limit-note"><Info size={14}/><span>Hasta 25 km² para análisis multiespectral gratuito. Los índices no identifican yacimientos.</span></div>
         </div>
-        <div className="sidebar-foot"><span className="live-dot"/> GeoMiner v1.3 <span className="foot-right">PROTOTIPO</span></div>
+        <div className="sidebar-foot"><span className="live-dot"/> GeoMiner v1.4 <span className="foot-right">PROTOTIPO</span></div>
       </aside>
       <main className="main-area">
         <header className="topbar">
@@ -723,14 +734,25 @@ export default function App() {
                   {researchError&&<p className="error-box" role="alert">{researchError}</p>}
                   {autoResearch&&<div className="auto-research-results">
                     <p className="auto-research-date">Consulta: {new Date(autoResearch.queriedAt).toLocaleString('es-BO')}</p>
+                    <div className="research-audit" aria-label="Estado de los datos del estudio">
+                      <strong>Resultado comprobable: {researchAudit.level}</strong>
+                      <p>{researchAudit.hasGeology?`${researchAudit.facts.find(f=>f.id==='geology').count} unidades cartográficas descargadas. `:'No se descargaron unidades geológicas. '}{researchAudit.hasProfile?'Perfil de elevación obtenido. ':'Sin perfil topográfico. '}</p>
+                      <p><strong>Hiperespectral:</strong> EnMAP {researchAudit.enmapCount} escena(s) en catálogo; EMIT {researchAudit.emitCount} escena(s) en catálogo. <strong>No son minerales procesados.</strong></p>
+                      <details><summary>Datos y verificaciones pendientes</summary>
+                        <p>{researchAudit.mineralogyNote}</p>
+                        <ul>{researchAudit.actions.map((a,i)=><li key={i}>{a}</li>)}</ul>
+                        <button type="button" className="spectral-export" onClick={downloadResearchEvidence}><Download size={15}/> Exportar datos reales consultados (JSON/GeoJSON)</button>
+                      </details>
+                    </div>
                     {[['geology','Unidades geológicas'],['faults','Fallas'],['anticlines','Anticlinales'],['synclines','Sinclinales'],['enmap','EnMAP hiperespectral'],['emit','NASA EMIT'],['relief','Perfil topográfico']].map(([key,label])=>{
-                      const entry=autoResearch.services[key];return <div key={key} className="auto-source-item"><strong>{label}</strong><span>{entry.status==='ok'?((entry.count??(entry.points?.length||0))+' registros consultados'):'Servicio no disponible'}</span>{entry.error&&<small>{entry.error}</small>}</div>;
+                      const entry=autoResearch.services[key];const catalog=key==='emit'||key==='enmap';const total=entry?.count??(entry?.points?.length||0);
+                      return <div key={key} className="auto-source-item"><strong>{label}</strong><span>{!entry?'Sin consulta':entry.status!=='ok'?'Servicio no disponible':total===0?'Consultado sin registros':catalog?`${total} ficha(s) en catálogo · sin procesar`:`${total} dato(s) descargados`}</span>{entry?.error&&<small>{entry.error}</small>}</div>;
                     })}
                     {autoResearch.services.geology?.status==='ok'&&<div className="geologist-import-result"><strong>Mapa geológico público consultado</strong><p>{autoResearch.services.geology.count} entidades devueltas; sus polígonos se muestran sobre el mapa. Fuente: GeoBolivia / SERGEOTECMIN, escala regional.</p>{autoResearch.services.geology.features?.features?.slice(0,12).map((f,i)=><p key={i}>{Object.entries(f.properties||{}).slice(0,4).map(([k,v])=>`${k}: ${v}`).join(' · ')||'Unidad sin atributos descriptivos'}</p>)}{autoGeoMatches.length>0&&<p><strong>{autoGeoMatches.length}</strong> cruces aproximados con sectores calculados; verificar escala y posición.</p>}</div>}
                     {autoResearch.services.relief?.status==='ok'&&<div className="auto-profile"><strong>Perfil topográfico oeste–este (SRTM ≈90 m)</strong><svg viewBox="0 0 340 125" role="img" aria-label="Perfil de elevaciones aproximadas"><path d={(()=>{const pts=autoResearch.services.relief.points;const min=autoResearch.services.relief.minMeters;const range=Math.max(1,autoResearch.services.relief.maxMeters-min);return pts.filter(p=>p.elevation!=null).map((p,i)=>(i===0?'M':'L')+' '+(12+p.position*315).toFixed(2)+' '+(110-(p.elevation-min)/range*92).toFixed(2)).join(' ')})()} fill="none" stroke="#128773" strokeWidth="2.5"/><path d="M 12 110 L 328 110" stroke="#78929b" strokeWidth="1"/></svg><small>Altitud: {autoResearch.services.relief.minMeters}–{autoResearch.services.relief.maxMeters} m. Es un perfil del relieve, no un corte de rocas subterráneas.</small></div>}
                     {autoResearch.services.enmap?.items?.length>0&&<details><summary>Escenas EnMAP encontradas ({autoResearch.services.enmap.count})</summary>{autoResearch.services.enmap.items.map(x=><p key={x.id}>{x.date||'Fecha desconocida'} · {x.id}</p>)}</details>}
                     {autoResearch.services.emit?.items?.length>0&&<details><summary>Escenas EMIT encontradas ({autoResearch.services.emit.count})</summary>{autoResearch.services.emit.items.map(x=><p key={x.id}>{x.date||'Fecha desconocida'} · {x.title}</p>)}</details>}
-                    <small>La búsqueda de escenas no implica que ya se hayan descargado o procesado datos hiperespectrales. Una consulta sin resultados tampoco demuestra ausencia de cobertura histórica.</small>
+                    <small>Las escenas EnMAP/EMIT aquí mostradas son solo fichas de inventario. Para describir minerales necesitamos procesar los productos originales y comprobar su incertidumbre. La consulta sin resultados no prueba ausencia histórica de cobertura.</small>
                   </div>}
                 </div>
                 <details className="secondary-tools"><summary>Documentación adicional (opcional)</summary>
