@@ -21,9 +21,9 @@ function localApi(){
       res.setHeader('Cache-Control','no-store');
       let raw='';
       try {
-        for await (const chunk of req) {raw+=chunk.toString();if(raw.length>20000){res.statusCode=413;res.end(JSON.stringify({error:'Solicitud demasiado grande.'}));return;}}
+        for await (const chunk of req) {raw+=chunk.toString();if(raw.length>120000){res.statusCode=413;res.end(JSON.stringify({error:'Solicitud demasiado grande.'}));return;}}
         const body=JSON.parse(raw);
-        const result=await createAiReport({data:body.report,passcode:req.headers['x-geominer-admin-code']});
+        const result=await createAiReport({data:body.report,passcode:req.headers['x-geominer-admin-code'],preview:body.preview});
         res.statusCode=result.status;res.end(JSON.stringify(result.body));
       }catch {res.statusCode=400;res.end(JSON.stringify({error:'Datos JSON inválidos.'}));}
     });

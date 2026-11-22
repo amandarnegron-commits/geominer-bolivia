@@ -8,6 +8,9 @@ import { detectAnomalyZones, zonesToGeoJSON } from './anomaly-zones.js';
 import { downloadReportPdf } from './report-pdf.js';
 import { CERRO_RICO, cerroRicoBbox, coversCerroRico } from './cerro-rico.js';
 import { compareSpectralResults, FIELD_STATUSES, noteKey, normalizeFieldNote, exportValidationBundle } from './pilot-validation.js';
+import { neighbouringBbox, controlAreaComparison } from './control-area.js';
+import { falseColorRGBA } from './false-color.js';
+import { minimumGroupPixels } from './resolution.js';
 import {
   Satellite, MapPinned, Layers3, Map, Search, Compass, Mountain, Waves,
   Crosshair, ScanLine, Database, FileText, ChevronDown, ExternalLink,
@@ -67,7 +70,17 @@ export default function App() {
   const [aiBusy, setAiBusy] = useState(false);
   const [aiError, setAiError] = useState('');
   const [adminCode, setAdminCode] = useState('');
+  const [aiPreview,setAiPreview] = useState(false);
   const [indicator, setIndicator] = useState('iron');
+  const [resolutionMeters,setResolutionMeters] = useState(20);
+  const [spectralView,setSpectralView] = useState('indices');
+  const [showGeology,setShowGeology] = useState(false);
+  const [showFaults,setShowFaults] = useState(false);
+  const [showRelief,setShowRelief] = useState(false);
+  const [controlDirection,setControlDirection] = useState('W');
+  const [controlResult,setControlResult] = useState(null);
+  const [controlBusy,setControlBusy] = useState(false);
+  const [controlError,setControlError] = useState('');
   const [heatmapUrl, setHeatmapUrl] = useState(null);
   const [selectedZoneId, setSelectedZoneId] = useState(null);
   const [compareSceneId,setCompareSceneId] = useState('');
@@ -96,18 +109,21 @@ export default function App() {
     return fieldLog.filter(x=>{try{const k=JSON.parse(x.key);return Array.isArray(k)&&JSON.stringify(k[0])===areaId&&x.sceneId===analysisScene.id;}catch{return false;}});
   },[fieldLog,bbox,analysisScene]);
   const analysisStats = useMemo(() => analysisResult ? statsFor(analysisResult[indicator]) : null,[analysisResult,indicator]);
-  const zones = useMemo(() => detectAnomalyZones(analysisResult,bbox,indicator,{minPixels:3,limit:12}),[analysisResult,bbox,indicator]);
+  const zones = useMemo(() => detectAnomalyZones(analysisResult,bbox,indicator,{minPixels:minimumGroupPixels(analysisResult),limit:12}),[analysisResult,bbox,indicator]);
+  const controlSummary=useMemo(()=>analysisResult&&controlResult?.result?controlAreaComparison(analysisResult,controlResult.result,controlResult.direction):null,[analysisResult,controlResult]);
   const selectedZone = useMemo(()=>zones.find(z=>z.id===selectedZoneId)||null,[zones,selectedZoneId]);
   const preparedReport = useMemo(() => analysisResult && bbox && analysisScene ? prepareReport({
     bbox,region:city,scene:analysisScene,result:analysisResult,
     temporal: temporalComparison&&compareOutput?.scene ? {
       secondSceneId:compareOutput.scene.id, secondDate:compareOutput.scene.date,
       grid:temporalComparison.grid,metrics:temporalComparison.metrics
-    }:null
-  }):null,[analysisResult,bbox,analysisScene,city,temporalComparison,compareOutput]);
+    }:null,
+    control:controlSummary&&controlResult?{...controlSummary,bbox:controlResult.bbox,date:analysisScene.date,sceneId:analysisScene.id}:null
+  }):null,[analysisResult,bbox,analysisScene,city,temporalComparison,compareOutput,controlSummary,controlResult]);
   function clearSpectral() {
     abortAnalysis.current?.abort();
     setCompareOutput(null);setCompareSceneId('');setCompareError('');setCompareLoading(false);setNoteText('');
+    setControlResult(null);setControlBusy(false);setControlError('');setSpectralView('indices');
     setAnalysisResult(null);setHeatmapUrl(null);setAnalysisScenes(null);setAnalysisScene(null);setSelectedZoneId(null);
     setAnalysisError('');setAnalysisMessage('');setAiText('');setAiUsage(null);setAiError('');
   }
@@ -120,11 +136,17 @@ export default function App() {
         version: 8,
         sources: {
           'osm': { type:'raster', tiles:['https://tile.openstreetmap.org/{z}/{x}/{y}.png'], tileSize:256, attribution:'© <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener noreferrer">OpenStreetMap contributors</a>', maxzoom:19 },
-          'satellite-2016': { type:'raster', tiles:['https://tiles.maps.eox.at/wmts/1.0.0/s2cloudless_3857/default/g/{z}/{y}/{x}.jpg'], tileSize:256, maxzoom:13, attribution:'Sentinel-2 cloudless 2016 — EOX IT Services GmbH (Contains modified Copernicus Sentinel data 2016), CC BY 4.0' }
+          'satellite-2016': { type:'raster', tiles:['https://tiles.maps.eox.at/wmts/1.0.0/s2cloudless_3857/default/g/{z}/{y}/{x}.jpg'], tileSize:256, maxzoom:13, attribution:'Sentinel-2 cloudless 2016 — EOX IT Services GmbH (Contains modified Copernicus Sentinel data 2016), CC BY 4.0' },
+          'terrain-mapzen': { type:'raster-dem', tiles:['https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png'], encoding:'terrarium',tileSize:256,maxzoom:14,attribution:'Relieve DEM Mapzen / AWS Open Data; créditos a fuentes de elevación originales' },
+          'geology-geobolivia': {type:'raster',tiles:['https://geo.gob.bo/geoserver/sergeotecmin/wms?SERVICE=WMS&VERSION=1.1.1&REQUEST=GetMap&LAYERS=sergeotecmin%3AGeologia&STYLES=&FORMAT=image%2Fpng&TRANSPARENT=true&SRS=EPSG%3A3857&BBOX={bbox-epsg-3857}&WIDTH=256&HEIGHT=256'],tileSize:256,attribution:'Mapa geológico nacional © SERGEOMIN / GeoBolivia (escala general; consultar fuente)'},
+          'faults-geobolivia': {type:'raster',tiles:['https://geo.gob.bo/geoserver/sergeotecmin/wms?SERVICE=WMS&VERSION=1.1.1&REQUEST=GetMap&LAYERS=sergeotecmin%3AFallas&STYLES=&FORMAT=image%2Fpng&TRANSPARENT=true&SRS=EPSG%3A3857&BBOX={bbox-epsg-3857}&WIDTH=256&HEIGHT=256'],tileSize:256,attribution:'Fallas regionales © SERGEOMIN / GeoBolivia (escala general)'}
         },
         layers: [
           { id:'base', type:'raster', source:'osm' },
-          { id:'satellite-2016-layer', type:'raster', source:'satellite-2016', layout:{visibility:'none'} }
+          { id:'satellite-2016-layer', type:'raster', source:'satellite-2016', layout:{visibility:'none'} },
+          { id:'terrain-hillshade',type:'hillshade',source:'terrain-mapzen',layout:{visibility:'none'},paint:{'hillshade-exaggeration':0.35} },
+          { id:'geology-map-layer',type:'raster',source:'geology-geobolivia',layout:{visibility:'none'},paint:{'raster-opacity':0.68} },
+          { id:'faults-map-layer',type:'raster',source:'faults-geobolivia',layout:{visibility:'none'},paint:{'raster-opacity':0.90} }
         ]
       },
       center: [-65.753,-19.572],
@@ -181,7 +203,17 @@ export default function App() {
     if (instance.isStyleLoaded()) change(); else instance.once('load', change);
   }, [baseLayer]);
 
-  // Geo-referenciamos exactamente la cuadrícula del análisis en el terreno elegido.
+  useEffect(()=>{
+    const instance=map.current;if(!instance)return;
+    const display=()=>{
+      for(const [layer,visible] of [['terrain-hillshade',showRelief],['geology-map-layer',showGeology],['faults-map-layer',showFaults]]){
+        if(instance.getLayer(layer))instance.setLayoutProperty(layer,'visibility',visible?'visible':'none');
+      }
+    };
+    if(instance.isStyleLoaded())display();else instance.once('load',display);
+  },[showRelief,showGeology,showFaults]);
+
+  // Geo-referenciamos aproximadamente la cuadrícula del análisis en el terreno elegido.
   useEffect(() => {
     const instance=map.current;
     if(!instance)return;
@@ -211,9 +243,10 @@ export default function App() {
     const canvas=document.createElement('canvas');
     canvas.width=analysisResult.width;canvas.height=analysisResult.height;
     const ctx=canvas.getContext('2d');
-    ctx.putImageData(new ImageData(rasterRGBA(selected,stats,indicator),canvas.width,canvas.height),0,0);
+    const pixels=spectralView==='falsecolor'?falseColorRGBA(analysisResult):rasterRGBA(selected,stats,indicator);
+    ctx.putImageData(new ImageData(pixels,canvas.width,canvas.height),0,0);
     setHeatmapUrl(canvas.toDataURL('image/png'));
-  },[analysisResult,indicator]);
+  },[analysisResult,indicator,spectralView]);
 
   // Marcadores interactivos para grupos CONTIGUOS de respuesta >=P90.
   // No se infiere un yacimiento; el punto corresponde al centro del píxel de índice máximo.
@@ -260,7 +293,7 @@ export default function App() {
   async function findAnalysisScenes() {
     if(!bbox||area>25.01||area<0.01){setAnalysisError('Para el análisis selecciona una zona de 0,01 a 25 km².');return;}
     setAnalysisBusy(true);setAnalysisError('');setAnalysisScenes(null);setAnalysisScene(null);setSelectedZoneId(null);setAiText('');setAiUsage(null);setAiError('');
-    setAnalysisResult(null);setHeatmapUrl(null);setSelectedZoneId(null);setCompareOutput(null);setCompareSceneId('');setCompareError('');
+    setAnalysisResult(null);setHeatmapUrl(null);setSelectedZoneId(null);setCompareOutput(null);setCompareSceneId('');setCompareError('');setControlResult(null);setControlError('');
     setAnalysisMessage('Buscando escenas públicas con bandas B2, B4, B8, B11 y B12…');
     setActiveTab('analysis');
     try {
@@ -279,7 +312,7 @@ export default function App() {
     const controller=new AbortController();abortAnalysis.current=controller;
     setAnalysisBusy(true);setAnalysisError('');setAnalysisResult(null);setHeatmapUrl(null);setSelectedZoneId(null);setCompareOutput(null);setCompareError('');setAiText('');setAiUsage(null);setAiError('');
     try {
-      const result=await analyseScene(analysisScene,bbox,{onProgress:setAnalysisMessage,signal:controller.signal});
+      const result=await analyseScene(analysisScene,bbox,{resolutionMeters,onProgress:setAnalysisMessage,signal:controller.signal});
       if(result.valid===0)throw new Error('No hay píxeles de suelo aptos después de excluir nubes, agua y vegetación. Prueba otra fecha o terreno.');
       setAnalysisResult(result);
       setAnalysisMessage('Análisis calculado con datos de la escena seleccionada.');
@@ -302,11 +335,23 @@ export default function App() {
     setCompareLoading(true);setCompareError('');setCompareOutput(null);
     const controller=new AbortController();abortAnalysis.current=controller;
     try {
-      const result=await analyseScene(second,bbox,{signal:controller.signal,onProgress:setAnalysisMessage});
+      const result=await analyseScene(second,bbox,{resolutionMeters,signal:controller.signal,onProgress:setAnalysisMessage});
       if(result.valid<10)throw new Error('La segunda escena tiene menos de 10 píxeles útiles. Prueba otra fecha.');
       setCompareOutput({scene:second,result});
     }catch(err){setCompareError(err?.message||'Error leyendo segunda escena.');}
     finally{if(abortAnalysis.current===controller)abortAnalysis.current=null;setCompareLoading(false);}
+  }
+  async function processControlArea(){
+    if(!analysisResult||!analysisScene||!bbox||controlBusy)return;
+    setControlBusy(true);setControlError('');setControlResult(null);setAiText('');
+    const testBbox=neighbouringBbox(bbox,controlDirection);
+    const controller=new AbortController();abortAnalysis.current=controller;
+    try{
+      const result=await analyseScene(analysisScene,testBbox,{resolutionMeters,signal:controller.signal,onProgress:setAnalysisMessage});
+      if(result.valid<10)throw new Error('El área vecina no tiene suficientes píxeles útiles en este COG. Prueba otra dirección o escena.');
+      setControlResult({direction:controlDirection,bbox:testBbox,result});
+    }catch(err){setControlError(err?.message||'No se pudo procesar el área de comparación.');}
+    finally{if(abortAnalysis.current===controller)abortAnalysis.current=null;setControlBusy(false);}
   }
   function saveFieldObservation(){
     if(!selectedZone||!analysisScene||!bbox)return;
@@ -326,6 +371,16 @@ export default function App() {
     const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download='GeoMiner_evidencia_Cerro_Rico.json';
     document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),1000);
   }
+  function makeAiThumbnail(){
+    if(!analysisResult?.spectral)return null;
+    const source=document.createElement('canvas');source.width=analysisResult.width;source.height=analysisResult.height;
+    source.getContext('2d').putImageData(new ImageData(falseColorRGBA(analysisResult),source.width,source.height),0,0);
+    const thumb=document.createElement('canvas');thumb.width=128;thumb.height=128;
+    const ctx=thumb.getContext('2d');ctx.fillStyle='#101e28';ctx.fillRect(0,0,128,128);ctx.drawImage(source,0,0,128,128);
+    const preview=thumb.toDataURL('image/jpeg',0.68);
+    if(preview.length>80000)throw new Error('Miniatura demasiado grande; prueba sin imagen.');
+    return preview;
+  }
   async function generateAiReport() {
     if (!preparedReport || aiBusy) return;
     if (!adminCode.trim()) {setAiError('Ingresa el código privado de GeoMiner configurado en Vercel.');return;}
@@ -334,7 +389,7 @@ export default function App() {
       const response=await fetch('/api/ai-report',{
         method:'POST',
         headers:{'Content-Type':'application/json','x-geominer-admin-code':adminCode},
-        body:JSON.stringify({report:preparedReport})
+        body:JSON.stringify({report:preparedReport,preview:aiPreview?makeAiThumbnail():null})
       });
       const payload=await response.json();
       if(!response.ok)throw new Error(payload.error||'Error conectando con OpenAI.');
@@ -479,7 +534,7 @@ export default function App() {
           </button>
           <div className="limit-note"><Info size={14}/><span>Hasta 25 km² para análisis multiespectral gratuito. Los índices no identifican yacimientos.</span></div>
         </div>
-        <div className="sidebar-foot"><span className="live-dot"/> GeoMiner v0.7 <span className="foot-right">PROTOTIPO</span></div>
+        <div className="sidebar-foot"><span className="live-dot"/> GeoMiner v0.8 <span className="foot-right">PROTOTIPO</span></div>
       </aside>
       <main className="main-area">
         <header className="topbar">
@@ -489,7 +544,7 @@ export default function App() {
           </div>
           <div className="topbar-meta">
             <span className="state-pill"><span className="live-dot"/> Catálogo Copernicus</span>
-            <span className="v-tag">Beta 0.7</span>
+            <span className="v-tag">Beta 0.8</span>
           </div>
         </header>
         <section className="work-area">
@@ -502,10 +557,11 @@ export default function App() {
               <div className="map-tip"><Crosshair size={16}/><span>{startPoint?'Selecciona la segunda esquina':bbox?'Área delimitada · puedes consultar escenas':'Dos clics para delimitar tu terreno'}</span></div>
               <div className="map-legend"><span className="legend-swatch"/> Área seleccionada</div>
               {baseLayer==='historical'&&<div className="map-history-warning">Mosaico Sentinel-2 de 2016 · Imagen de referencia histórica.</div>}
-              {analysisResult&&<div className="map-spectral-warning">{indicator==='iron'?'B4/B2':'B11/B12'} · Respuesta relativa de superficie · {dateStr(analysisScene?.date)} · NO es mineral confirmado.</div>}
-              {analysisResult&&zones.length>0&&<div className="anomaly-map-count">{zones.length} sectores P90+ · {indicator==='iron'?'B4/B2':'B11/B12'} · <button type="button" onClick={()=>setActiveTab('anomalies')}>Inspeccionar</button></div>}
+              {analysisResult&&<div className="map-spectral-warning">{spectralView==='falsecolor'?'Falso color B11/B8/B4':INDICATORS[indicator].formula} · Respuesta relativa de superficie · {dateStr(analysisScene?.date)} · NO es mineral confirmado.</div>}
+              {analysisResult&&zones.length>0&&<div className="anomaly-map-count">{zones.length} sectores P90+ · {INDICATORS[indicator].formula} · <button type="button" onClick={()=>setActiveTab('anomalies')}>Inspeccionar</button></div>}
               {cursor&&<div className="coordinates">LAT {cursor[0]} · LON {cursor[1]}</div>}
             </div>
+            <div className="map-layer-controls"><label><input type="checkbox" checked={showRelief} onChange={e=>setShowRelief(e.target.checked)}/> Relieve DEM</label><label><input type="checkbox" checked={showGeology} onChange={e=>setShowGeology(e.target.checked)}/> Geología (WMS)</label><label><input type="checkbox" checked={showFaults} onChange={e=>setShowFaults(e.target.checked)}/> Fallas regionales</label><small>Capas cartográficas externas, no validadas por GeoMiner. Si el servidor WMS falla, desactívalas. Geología nacional a escala general.</small></div>
             <div className="map-bottom">
               <div><Info size={16}/><span>Los límites dibujados son aproximados; no equivalen a derechos mineros ni catastros oficiales.</span></div>
               <span>{baseLayer==='historical'?'Sentinel-2 2016 © EOX, CC BY 4.0':'OpenStreetMap'}</span>
@@ -537,14 +593,14 @@ export default function App() {
                 {CERRO_RICO.bibliography.map(ref=><a className="pilot-source" href={ref.url} target="_blank" rel="noopener noreferrer" key={ref.url}>
                   <span><strong>{ref.title}</strong><small>{ref.claim}</small></span><ExternalLink size={15}/>
                 </a>)}
-                <div className="pilot-source-note">Esta versión enlaza fuentes públicas; todavía NO superpone geometrías geológicas oficiales sobre los sectores.</div>
+                <div className="pilot-source-note">GeoMiner incorpora capas WMS de GeoBolivia (geología y fallas regionales) sobre el mapa. Son referencias cartográficas de escala general, NO cruces geológicos automatizados ni validación de los sectores.</div>
               </div>
             ) : activeTab==='anomalies' ? (
               <div className="panel-inner anomaly-panel">
                 <div className="anomaly-intro"><MapPinned size={20}/><div><strong>Sectores de respuesta espectral alta</strong><p>Grupos de al menos 3 píxeles contiguos sobre el P90 de la escena. Son referencias para verificación, NO depósitos detectados.</p></div></div>
                 {!analysisResult ? <div className="empty-state compact"><ScanLine size={35} className="muted"/><strong>Procesa primero una escena</strong><p>Busca imágenes en la pestaña Análisis y ejecuta el procesamiento espectral.</p><button type="button" className="report-link" onClick={()=>setActiveTab('analysis')}>Ir a Análisis</button></div>:
                 <div className="anomaly-body">
-                  <div className="spectral-mode">{Object.entries(INDICATORS).map(([id])=><button type="button" key={id} className={indicator===id?'active':''} onClick={()=>{setIndicator(id);setSelectedZoneId(null);}}>{id==='iron'?'B4/B2 · Férrico':'B11/B12 · SWIR'}</button>)}</div>
+                  <div className="spectral-mode">{Object.entries(INDICATORS).map(([id,meta])=><button type="button" disabled={id==='ferrous'&&!analysisResult.bandsRead?.includes('nir08')||id==='rededge'&&(!analysisResult.bandsRead?.includes('rededge1')||!analysisResult.bandsRead?.includes('rededge3'))} key={id} className={indicator===id?'active':''} onClick={()=>{setIndicator(id);setSelectedZoneId(null);}}>{meta?.formula||INDICATORS[id].formula}</button>)}</div>
                   <div className="anomaly-summary"><span><strong>{zones.length}</strong> sectores agrupados</span><span>P90 ≥ {analysisStats?.p90?.toFixed(3)??'s/d'}</span></div>
                   <label className="anomaly-toggle"><input type="checkbox" checked={showZoneMarkers} onChange={e=>setShowZoneMarkers(e.target.checked)}/> Mostrar marcadores numerados en el mapa</label>
                   <label className="anomaly-opacity">Transparencia de capa: {Math.round(heatOpacity*100)} %<input type="range" min="0.2" max="1" step="0.1" value={heatOpacity} onChange={e=>setHeatOpacity(Number(e.target.value))}/></label>
@@ -572,9 +628,15 @@ export default function App() {
                     {Object.entries(temporalComparison.metrics).map(([k,m])=><div className="validation-metric" key={k}><small>{k==='iron'?'B4/B2 · Férrica':'B11/B12 · SWIR'}</small><strong>{m.jaccard===null?'Sin coincidencia evaluable':Math.round(m.jaccard*100)+'% de coincidencia Jaccard'}</strong><span>{m.overlapPixels} celdas P90 compartidas · {m.unionPixels} celdas en la unión</span></div>)}
                     <p><strong>Advertencia:</strong> un valor elevado indica persistencia del patrón, no exactitud de detección minera. La exposición del terreno o la minería activa pueden explicar coincidencias.</p>
                   </div>}
-                  <h3>2. Registro de revisión de un sector</h3>
+                  <h3>2. Área vecina de control (sin etiqueta de mineral)</h3>
+                  <p>Se compara la distribución de índices del Cerro Rico con un cuadro vecino de igual tamaño en la MISMA escena y con la misma resolución. No supone geología equivalente ni demuestra capacidad predictiva.</p>
+                  <label>Dirección del cuadro vecino</label><select value={controlDirection} onChange={e=>{setControlDirection(e.target.value);setControlResult(null);setControlError('');}}><option value="W">Oeste</option><option value="E">Este</option><option value="N">Norte</option><option value="S">Sur</option></select>
+                  <button type="button" className="run-btn" onClick={processControlArea} disabled={controlBusy||compareLoading||analysisBusy}>{controlBusy?<LoaderCircle className="spin" size={16}/>:<ScanLine size={16}/>} {controlBusy?'Procesando área vecina…':'Comparar área vecina con Cerro Rico'}</button>
+                  {controlError&&<div className="error-box"><AlertTriangle size={16}/>{controlError}</div>}
+                  {controlSummary&&<div className="validation-results"><strong>Contraste descriptivo — {controlResult.direction}</strong>{Object.entries(controlSummary.indices).map(([k,m])=><div className="validation-metric" key={k}><small>{INDICATORS[k].formula}</small><strong>Mediana zona: {m.mainP50?.toFixed(3)??'s/d'} · control: {m.controlP50?.toFixed(3)??'s/d'}</strong><span>Diferencia de medianas: {m.deltaP50??'s/d'} · píxeles válidos {m.validMain}/{m.validControl}</span></div>)}<p>{controlSummary.warning}</p></div>}
+                  <h3>3. Registro de revisión de un sector</h3>
                   <p>Selecciona un sector en la pestaña «Sectores». Los registros se guardan <strong>solo en este navegador</strong>, sin firma ni auditoría externa.</p>
-                  <div className="validation-selected">{selectedZone?`Sector ${selectedZone.number} · ${indicator==='iron'?'B4/B2':'B11/B12'} · ${selectedZone.lat}, ${selectedZone.lon}`:'Aún no seleccionaste un sector'}</div>
+                  <div className="validation-selected">{selectedZone?`Sector ${selectedZone.number} · ${INDICATORS[indicator].formula} · ${selectedZone.lat}, ${selectedZone.lon}`:'Aún no seleccionaste un sector'}</div>
                   <label>Estado de revisión</label><select value={noteStatus} onChange={e=>setNoteStatus(e.target.value)}>{FIELD_STATUSES.map(st=><option value={st.value} key={st.value}>{st.label}</option>)}</select>
                   <label>Notas del operador (máx. 500 caracteres)</label><textarea rows={3} maxLength={500} placeholder="Anota fuente, observación remota, referencia de campo y limitaciones. No introduzcas información sensible." value={noteText} onChange={e=>setNoteText(e.target.value)}/>
                   <button type="button" className="spectral-export" disabled={!selectedZone} onClick={saveFieldObservation}><BookmarkPlus size={15}/> Guardar anotación no auditada</button>
@@ -595,11 +657,12 @@ export default function App() {
                     </div>
                     <p className="report-notice">Este informe incluye hasta 10 sectores por índice, con coordenadas aproximadas y datos numéricos. NO identifica oro, plata ni reservas. Descargar el PDF sin IA no consume tokens.</p>
                     <div className="report-zone-totals"><span>Respuesta férrica: <strong>{preparedReport.zones?.iron?.length??0} sectores</strong></span><span>Respuesta SWIR: <strong>{preparedReport.zones?.clay?.length??0} sectores</strong></span></div>
-                    <div className="report-validation-note">{temporalComparison ? `Comparación temporal realizada: ${temporalComparison.grid.sharedPct}% de celdas compartidas. Los resultados se incorporarán al PDF.` : 'Comparación temporal pendiente: disponible en «Validar».'} {activeAreaNotes.length} anotaciones locales.</div>
+                    <div className="report-validation-note">{controlSummary?'Contraste con área vecina procesado. ':'Sin control geográfico todavía. '}{temporalComparison ? `Comparación temporal realizada: ${temporalComparison.grid.sharedPct}% de celdas compartidas. Los resultados se incorporarán al PDF.` : 'Comparación temporal pendiente: disponible en «Validar».'} {activeAreaNotes.length} anotaciones locales.</div>
                     <button type="button" className="run-btn pdf-export" onClick={downloadPdf}><Download size={17}/> Descargar informe PDF gratuito</button>
                     <div className="report-ai-section">
                       <div className="caption-label"><FileText size={17}/> Interpretación con OpenAI</div>
-                      <p>La API es opcional y requiere configuración privada en Vercel. Se envían coordenadas y métricas del análisis; no se envían las imágenes completas.</p>
+                      <p>La API es opcional. Se envían estadísticas, coordenadas, bandas calculadas y contraste numérico del área de control cuando existe. La imagen de falso color NO se envía a OpenAI.</p>
+                      <label className="v08-preview-toggle"><input type="checkbox" checked={aiPreview} onChange={e=>setAiPreview(e.target.checked)}/> Analizar también miniatura de falso color (128×128). Opcional, puede consumir más tokens; la imagen NO demuestra minerales.</label>
                       <label htmlFor="report-admin-code">Código privado de acceso (no es la clave API)</label>
                       <input id="report-admin-code" type="password" autoComplete="off" value={adminCode} onChange={e=>setAdminCode(e.target.value)} placeholder="Código definido en Vercel"/>
                       <button type="button" className="run-btn" onClick={generateAiReport} disabled={aiBusy||!adminCode.trim()}>{aiBusy?<LoaderCircle className="spin" size={17}/>:<FileText size={17}/>} {aiBusy?'Interpretando resultados…':'Generar interpretación con IA'}</button>
@@ -611,7 +674,7 @@ export default function App() {
               </div>
             ) : activeTab==='analysis' ? (
               <div className="panel-inner spectral-panel">
-                <div className="spectral-intro"><Layers3 size={19}/><div><strong>Prospección espectral preliminar</strong><p>Sentinel-2 L2A · bandas reales B2, B4, B8, B11 y B12 · clasificación de terreno SCL.</p></div></div>
+                <div className="spectral-intro"><Layers3 size={19}/><div><strong>Prospección espectral preliminar v0.8</strong><p>Sentinel-2 L2A · B2/B3/B4/B8/B11/B12, bandas red-edge opcionales y SCL. No es detección de minerales.</p></div></div>
                 {!bbox&&<div className="empty-state compact"><Crosshair size={31} className="muted"/><strong>Selecciona tu terreno</strong><p>Delimita un terreno con GPS o dos clics en el mapa. Después busca escenas para analizar.</p></div>}
                 {bbox&&area>25.01&&<div className="error-box"><Info size={17}/> Elige 5 × 5 km o menos para el procesamiento inicial. Área actual: {fmt(area)} km².</div>}
                 {bbox&&area<=25.01&&<div className="spectral-step"><strong>1. Buscar imágenes multiespectrales</strong><button type="button" onClick={findAnalysisScenes} disabled={analysisBusy}>Consultar escenas gratuitas</button></div>}
@@ -622,15 +685,20 @@ export default function App() {
                     {analysisScenes.scenes.map(scene=><option value={scene.id} key={scene.id}>{dateStr(scene.date)} · Nubes {scene.cloud}% · {scene.platform}</option>)}
                   </select>:<p>No se encontraron escenas completas con las bandas requeridas.</p>}
                   <p>La nubosidad corresponde a toda la escena, no necesariamente a tu terreno.</p>
+                  <label htmlFor="analysis-resolution">Resolución de cuadrícula</label><select id="analysis-resolution" value={resolutionMeters} onChange={e=>{setResolutionMeters(Number(e.target.value));setAnalysisResult(null);setHeatmapUrl(null);setCompareOutput(null);setControlResult(null);setAiText('');setSelectedZoneId(null);}}><option value={20}>20 m · recomendado (más rápido)</option><option value={10}>10 m · más detalle, SWIR de 20 m remuestreada</option></select>
+                  <p>La opción de 10 m NO crea nuevos detalles en bandas originalmente de 20 m. El procesamiento puede tardar más y consumir memoria/red.</p>
                   <button className="run-btn spectral-process" onClick={processAnalysis} disabled={analysisBusy||!analysisScene}><ScanLine size={17}/> 2. Procesar bandas de la escena</button>
                 </div>}
                 {analysisResult&&analysisStats&&<div className="spectral-output">
                   <strong>Resultados de índices relativos</strong>
+                  <p className="v08-diagnostics">Cuadrícula: {analysisResult.width} × {analysisResult.height} · celda UTM ≈{analysisResult.cellWidthMeters} × {analysisResult.cellHeightMeters} m · {analysisResult.bandsRead?.length||0} bandas descargadas. {analysisResult.upsampled20mBands?'B11/B12, SCL y red-edge remuestreadas desde 20 m.':'Muestreo a aproximadamente 20 m.'}</p>
+                  <div className="spectral-mode"><button type="button" className={spectralView==='indices'?'active':''} onClick={()=>setSpectralView('indices')}>Mapa de índices</button><button type="button" className={spectralView==='falsecolor'?'active':''} onClick={()=>setSpectralView('falsecolor')}>Falso color B11/B8/B4</button></div>
                   <div className="spectral-mode">
-                    {Object.entries(INDICATORS).map(([id,meta])=><button key={id} className={indicator===id?'active':''} onClick={()=>{setIndicator(id);setSelectedZoneId(null);}}>{id==='iron'?'B4/B2 · Hierro':'B11/B12 · SWIR'}</button>)}
+                    {Object.entries(INDICATORS).map(([id,meta])=><button disabled={id==='ferrous'&&!analysisResult.bandsRead?.includes('nir08')||id==='rededge'&&(!analysisResult.bandsRead?.includes('rededge1')||!analysisResult.bandsRead?.includes('rededge3'))} key={id} className={indicator===id?'active':''} onClick={()=>{setIndicator(id);setSelectedZoneId(null);}}>{meta.formula}</button>)}
                   </div>
+                  {analysisStats.count===0&&<p className="spectral-footnote">Este indicador auxiliar no tiene datos válidos en la escena. Prueba otra fecha.</p>}
                   <div className="spectral-stat-grid"><div><small>Píxeles útiles</small><strong>{fmt(analysisResult.valid)} / {fmt(analysisResult.total)}</strong></div><div><small>Percentil 90</small><strong>{analysisStats.p90?.toFixed(3)??'s/d'}</strong></div></div>
-                  <p className="spectral-explain">{INDICATORS[indicator].label}. El mapa resalta valores superiores al percentil 75 <strong>dentro de este terreno</strong>; no equivale a una concentración o yacimiento confirmado.</p>
+                  <p className="spectral-explain">{spectralView==='falsecolor' ? 'Composición de falso color B11/B8/B4. Los colores no representan minerales ni son los colores naturales del suelo.' : `${INDICATORS[indicator].label}. Se resaltan valores a partir del P75 relativo al terreno.`} No demuestra yacimientos ni concentraciones.</p>
                   <button onClick={downloadIndicators} className="spectral-export"><Download size={15}/> Descargar píxeles P90+ (GeoJSON)</button>
                   <button type="button" className="spectral-export" onClick={()=>setActiveTab('anomalies')}><MapPinned size={15}/> Ver {zones.length} sectores agrupados en el mapa</button>
                 </div>}

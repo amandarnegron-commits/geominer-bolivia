@@ -3,7 +3,7 @@
  * Los componentes contiguos son zonas para inspección, NO depósitos ni hallazgos.
  * Emplea vecindad de ocho celdas y el P90 de cada índice dentro del polígono.
  */
-import { statsFor } from './indices.js';
+import { statsFor, INDICATORS } from './indices.js';
 
 const round = (n, digits=6) => Number(n.toFixed(digits));
 const validBbox = b => Array.isArray(b) && b.length === 4 && b.every(Number.isFinite) && b[0] < b[2] && b[1] < b[3];
@@ -12,9 +12,9 @@ const areaKm2 = b => Math.abs((b[3]-b[1])*111.32*(b[2]-b[0])*111.32*Math.cos((b[
 
 export function detectAnomalyZones(result, bbox, kind='iron', options={}) {
   const {minPixels=3, limit=12} = options;
-  if (!result || !validBbox(bbox) || !['iron','clay'].includes(kind)) return [];
+  if (!result || !validBbox(bbox) || !Object.hasOwn(INDICATORS,kind)) return [];
   const {width:w,height:h} = result;
-  if (!Number.isInteger(w) || !Number.isInteger(h) || w<1 || h<1 || w*h>100000) return [];
+  if (!Number.isInteger(w) || !Number.isInteger(h) || w<1 || h<1 || w*h>300000) return [];
   const values=result[kind];
   if (!values || values.length!==w*h) return [];
   const stats=statsFor(values);

@@ -34,7 +34,7 @@ export const CERRO_RICO = Object.freeze({
       title: 'SERGEOMIN — Geoportal y cartografía oficial',
       agency: 'Servicio Geológico Minero de Bolivia',
       url: 'https://ide.sergeomin.gob.bo/',
-      claim: 'Portal para consultar cartografía geológica. Sus capas aún NO se superponen ni validan píxeles en GeoMiner.'
+      claim: 'Portal oficial y capas WMS regionales disponibles como referencia visual. No se intersectan automáticamente con las anomalías.'
     },
     {
       title: 'UNESCO — Ciudad de Potosí, patrimonio en peligro',

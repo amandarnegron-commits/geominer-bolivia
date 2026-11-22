@@ -1,4 +1,4 @@
-import { statsFor } from './indices.js';
+import { statsFor, INDICATORS } from './indices.js';
 
 /** Comparación temporal de respuestas P90 en cuadrículas co-registradas del mismo terreno.
  * No permite estimar precisión, probabilidad de depósito, ni validar minerales.
@@ -7,7 +7,7 @@ export function compareSpectralResults(a,b) {
   if(!a||!b||!Number.isInteger(a.width)||!Number.isInteger(a.height)||a.width<1||a.height<1||a.width!==b.width||a.height!==b.height)
     throw new Error('Las escenas deben tener una cuadrícula idéntica y un terreno común.');
   const length=a.width*a.height;
-  if(length>100000||!['iron','clay'].every(k=>a[k]?.length===length&&b[k]?.length===length))throw new Error('Índices no comparables.');
+  if(length>300000||!['iron','clay'].every(k=>a[k]?.length===length&&b[k]?.length===length))throw new Error('Índices no comparables.');
   const shared=new Uint8Array(length);
   let n=0;
   for(let i=0;i<length;i++) {
@@ -47,7 +47,7 @@ export const FIELD_STATUSES=Object.freeze([
 ]);
 
 export function noteKey({bbox,sceneId,indicator,zoneId}) {
-  if(!Array.isArray(bbox)||bbox.length!==4||!bbox.every(Number.isFinite)||typeof sceneId!=='string'||!sceneId||!['iron','clay'].includes(indicator)||!zoneId)
+  if(!Array.isArray(bbox)||bbox.length!==4||!bbox.every(Number.isFinite)||typeof sceneId!=='string'||!sceneId||!Object.hasOwn(INDICATORS,indicator)||!zoneId)
     throw new Error('Se requiere escena, terreno e identificador de sector.');
   return JSON.stringify([bbox.map(v=>Number(v.toFixed(5))),sceneId,indicator,zoneId]);
 }

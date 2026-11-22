@@ -33,11 +33,15 @@ export function downloadReportPdf(report,{aiText='',heatmapUrl=null,indicator='i
   row('Nubosidad de escena',readable(report.scene.cloudPct)+' %');
   row('Fuente',report.scene.source);
   heading('2. Metricas espectrales');
-  row('Cuadricula',report.grid.width+' x '+report.grid.height+' (muestreo, no resolucion nativa)');
+  row('Cuadricula UTM',report.grid.width+' x '+report.grid.height+' (muestreo reproyectado)');
+  row('Celda aproximada',readable(report.grid.cellWidthMeters)+' x '+readable(report.grid.cellHeightMeters)+' m');
+  row('Bandas cargadas',(report.grid.bandsRead||[]).join(', '));
+  if(report.grid.upsampled20mBands)para('Advertencia: SWIR / red-edge / SCL tienen resolucion original de 20 m, aunque se visualicen en celdas de 10 m.',{size:9,color:muted});
   row('Pixeles validos',report.grid.validPixels+' / '+report.grid.totalPixels+' ('+readable(report.grid.usablePct)+' %)');
   for(const [label,entry] of [['Respuesta ferrica B4/B2',report.indices.iron],['Respuesta SWIR B11/B12',report.indices.clay]]){
     row(label,'P50 '+readable(entry.p50)+' | P75 '+readable(entry.p75)+' | P90 '+readable(entry.p90));
   }
+  for(const kind of ['ferrous','rededge']){const item=report.indices?.[kind];if(item?.p50!==null&&item?.p50!==undefined)row('Indice auxiliar '+item.formula, 'P50 '+readable(item.p50)+' | P90 '+readable(item.p90));}
   heading('3. Sectores de respuesta espectral relativa (GPS aproximado)');
   for(const [kind,label] of [['iron','Respuesta ferrica B4/B2'],['clay','Respuesta SWIR B11/B12']]){
     const zones=report.zones?.[kind]||[];
@@ -65,7 +69,7 @@ export function downloadReportPdf(report,{aiText='',heatmapUrl=null,indicator='i
         pdf.text(String(z.number),M+rx*64,y+ry*64+1.8,{align:'center'});
       }
       y+=68;
-      para('Capa: '+(indicator==='iron'?'B4/B2 (ferrica)':'B11/B12 (SWIR)')+'. Circulos numerados = centros aproximados de respuesta maxima en grupos P90+. El fondo muestra indices, NO fotografia satelital.',{size:9,color:muted});
+      para('Capa calculada: '+({iron:'B4/B2',clay:'B11/B12',ferrous:'B11/B8A',rededge:'B7/B5'}[indicator]||indicator)+'. Los circulos son sectores por encima de P90. El fondo representa bandas procesadas, no verificacion de mineral.',{size:9,color:muted});
     }catch{para('No fue posible incrustar la imagen de indicadores.',{color:muted,size:9});}
   }
   if(report.geologicalContext){
@@ -75,6 +79,14 @@ export function downloadReportPdf(report,{aiText='',heatmapUrl=null,indicator='i
     for(const source of report.geologicalContext.sources||[]) {
       para(source.agency+': '+source.title+' | '+source.url,{size:8,after:2});
     }
+  }
+  heading('Cartografia geologica y relieve (referencias externas)');
+  para('Visores y capas publicas: https://ide.sergeomin.gob.bo/ | WMS GeoBolivia, geologia y fallas regionales. Su escala es demasiado general para confirmar un sector de decenas de metros. No se automatizaron cruces GIS.',{size:9,color:muted});
+  if(report.control){
+    heading('Comparacion con area vecina (control descriptivo)');
+    para('Orientacion '+readable(report.control.direction)+' | Escena usada '+readable(report.control.sceneId)+' | Limites '+(report.control.bbox||[]).join(', '),{size:9});
+    for(const kind of ['iron','clay']){const s=report.control.indices?.[kind];if(s)row(kind==='iron'?'B4/B2':'B11/B12','Mediana Cerro '+readable(s.mainP50)+' | vecino '+readable(s.controlP50)+' | delta '+readable(s.deltaP50));}
+    para(report.control.warning||'Comparacion descriptiva, no prueba de minerales.',{size:9,color:muted});
   }
   heading('Comprobaciones del piloto (no certifican mineral)');
   if(validation){
@@ -100,6 +112,6 @@ export function downloadReportPdf(report,{aiText='',heatmapUrl=null,indicator='i
   para(report.disclaimer,{size:10,bold:true,color:[148,63,44],after:4});
   para('Se recomienda inspeccion de campo, cartografia geologica y analisis de laboratorio antes de tomar decisiones de inversion.',{size:9,color:muted});
   const pages=pdf.getNumberOfPages();
-  for(let i=1;i<=pages;i++){pdf.setPage(i);pdf.setFontSize(8);pdf.setTextColor(132,150,155);pdf.text('GeoMiner Bolivia v0.7 | Estudio preliminar | Pag. '+i+' / '+pages,M,288);}
+  for(let i=1;i<=pages;i++){pdf.setPage(i);pdf.setFontSize(8);pdf.setTextColor(132,150,155);pdf.text('GeoMiner Bolivia v0.8 | Estudio preliminar | Pag. '+i+' / '+pages,M,288);}
   pdf.save('GeoMiner_Informe_'+(report.scene.date||'escena').slice(0,10)+'.pdf');
 }

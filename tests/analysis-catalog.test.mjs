@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {checkArea,normaliseItem,safeCogUrl,searchAnalysisScenes} from '../lib/analysis-catalog.js';
 const url='https://e84-earth-search-sentinel-data.s3.us-west-2.amazonaws.com/sentinel-2-c1-l2a/19/K/A/file.tif';
-const assets=Object.fromEntries(['blue','red','nir','swir16','swir22','scl'].map(name=>[name,{href:url,'raster:bands':[{scale:name==='scl'?1:.0001,offset:0}]}]));
+const assets=Object.fromEntries(['blue','green','red','nir','swir16','swir22','scl'].map(name=>[name,{href:url,'raster:bands':[{scale:name==='scl'?1:.0001,offset:0}]}]));
 test('rechaza enlaces externos y áreas mayores a 25 km²',()=>{
   assert.equal(safeCogUrl('https://evil.example.com/file.tif'),null);
   assert.equal(safeCogUrl('http://e84-earth-search-sentinel-data.s3.us-west-2.amazonaws.com/file.tif'),null);
