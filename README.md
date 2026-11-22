@@ -1,82 +1,60 @@
-# GeoMiner Bolivia · v0.2
+# GeoMiner Bolivia v0.3 — Análisis espectral exploratorio
 
-**Plataforma de investigación geológica preliminar**, no un detector de oro ni un sistema de evaluación de reservas.
+Prototipo web para selección GPS, consulta de escenas Sentinel-2 y visualización de **índices espectrales reales, no mineralización comprobada**.
 
-## Novedades v0.2
-- Selector entre mapa CARTO y mosaico satelital Sentinel-2 **de 2016** (EOX, CC BY 4.0): histórico y NO una escena actual.
-- Búsqueda de terreno mediante centro GPS (latitud y longitud) con lado cuadrado de 1, 5, 10, 20 o 40 km.
-- Exportación del rectángulo seleccionado como GeoJSON o KML para GIS y GPS.
-- Filtro de nubosidad para las escenas candidatas devueltas por STAC.
-- Las imágenes más recientes consultadas en STAC siguen siendo solamente metadatos; visualizarlas exige integrar proceso de imágenes multibanda.
+## Qué incorpora v0.3
 
-## Lo que YA funciona
-- Mapa interactivo (cartografía base de OpenStreetMap/CARTO).
-- Selección de terrenos con dos clics y estimación de área geográfica.
-- Búsqueda REAL de metadatos Sentinel-2 L2A de los últimos 12 meses mediante catálogo STAC de Copernicus.
-- Visualización de fecha, satélite y nubosidad de escenas encontradas.
-- Guardar y volver a abrir áreas en el navegador (localStorage).
+- Mantiene mapa base OpenStreetMap y mosaico satelital histórico EOX, ya corregidos en v0.2.1.
+- Mantiene consulta de escenas **Copernicus Data Space** (`/api/sentinel`).
+- Añade **Earth Search** v1 (Element 84) para buscar escenas públicas Sentinel-2 Collection 1 L2A con archivos COG por banda (`/api/analysis-scenes`). El catálogo complementario se usa porque entrega archivos COG, no porque sea otro satélite.
+- Analiza realmente bandas de reflectancia **B2 (azul), B4 (rojo), B8 (NIR), B11 y B12 (SWIR)** y banda de clasificación **SCL**.
+- Calcula respuesta asociada a óxidos de hierro **B4/B2** y respuesta SWIR de arcillas/hidroxilos **B11/B12** en una cuadrícula **96 x 96** para terrenos de hasta **25 km²**.
+- Rechaza muestras etiquetadas SCL como nube, agua, sombra, nieve y vegetación. Filtro NDVI adicional para terreno expuesto. La banda SCL no es perfecta; sigue existiendo incertidumbre.
+- Colorea **el cuartil superior (percentil 75+) del propio terreno**, resalta la intensidad relativa y exporta puntos de percentil 90+ en GeoJSON, con advertencias científicas.
+- Identifica la fecha de la escena analizada, distinta del mosaico de fondo histórico de 2016.
 
-## Lo que TODAVÍA NO funciona
-- No muestra bandas multiespectrales reales sobre el mapa.
-- No calcula índices minerales ni detecta anomalías; esto es para la siguiente fase.
-- No tiene cuentas de usuario, guardado en Supabase, IA, ni generación de informes.
-- No usa ni necesita claves de Copernicus para consultar el catálogo abierto. Descargar y procesar los datos requerirá una integración adicional.
-- Solo la vista **Satélite 2016** es un mosaico satelital real, pero antiguo; no es una escena contemporánea ni un análisis espectral de la parcela. La vista Mapa es cartográfica.
+## Limitaciones importantes
 
-## Ejecutar en Mac o Windows
+- **No es detección directa de oro, plata, cobre ni reservas**. Hay muchas causas posibles para los mismos índices.
+- Los percentiles son **relativos a la selección** y no son porcentajes de mineral ni probabilidades de yacimiento.
+- Una imagen puede cubrir parcialmente un área o contener nubes pese a la nubosidad reportada a nivel escena.
+- La cuadrícula 96 x 96 es un muestreo: NO equivale a resolución uniforme original de 10/20 metros ni sustituye un análisis SIG profesional.
+- Descarga fragmentos de GeoTIFF COG directamente en el navegador: requiere acceso web y servidor de imágenes con HTTP Range + CORS. La aplicación muestra un error si esas condiciones fallan.
+- El raster SCL es una clasificación automática que puede fallar. Los resultados deben validarse con campo y geólogo.
+- OpenAI, informes PDF y Supabase todavía NO están conectados.
+- No probado de extremo a extremo contra servicios externos desde este entorno sin red: se han ejecutado pruebas unitarias y verificación sintáctica. Hay que verificar una escena en Mac después de instalar dependencias.
+- No incluir API keys en el repositorio o en `VITE_`.
 
-Requisitos: Node.js >=20 y conexión a internet.
+## Actualizar desde la versión 0.2.1 en la Mac
+
+Descarga y descomprime el **parche** sobre la carpeta del repo existente, conservando `.git`.
 
 ```bash
+cd ~/Downloads/geominer-bolivia
+unzip -o ~/Downloads/GeoMiner_Bolivia_v0.3_actualizacion.zip -d .
 npm install
+npm test
+npm run build
 npm run dev
 ```
-Abrir `http://localhost:5173`.
 
-En PowerShell si `npm` queda bloqueado por Execution Policy, usar `npm.cmd install` y `npm.cmd run dev`. No cambiar la política de seguridad del sistema.
+Probar `http://localhost:5173` antes de publicar. Seleccionar **Potosí**, GPS 5 km, **Aplicar**, elegir **Análisis**, **Consultar escenas gratuitas**, elegir escena con nubosidad baja y **Procesar bandas**. Si la carga tarda, esperar al resultado del navegador; se van leyendo 6 archivos COG.
 
-## GitHub de Amanda
-1. Amanda entra a https://github.com/new en su propia sesión.
-2. Crear repositorio `geominer-bolivia`, preferiblemente **privado**.
-3. No añadir README ni `.gitignore` al crear (ya están aquí).
-4. Desde la terminal en esta carpeta:
-```bash
-git init
-git add .
-git commit -m "GeoMiner Bolivia v0.1: mapa y catálogo Copernicus"
-git branch -M main
-git remote add origin https://github.com/USUARIO_DE_AMANDA/geominer-bolivia.git
-git push -u origin main
-```
-Sustituir USUARIO_DE_AMANDA por su nombre de usuario real; autenticar con GitHub oficial sin compartir contraseñas ni tokens por chat. Invitar al colaborador desde Settings > Collaborators, si hace falta.
+Al funcionar, abrir GitHub Desktop, `Commit to main` y `Push origin`. Vercel publica `main` si está vinculado. No hace falta configurar ninguna clave para esta fase.
 
-## Vercel — entorno personal de prueba
-1. Amanda entra en https://vercel.com/new.
-2. Importar el repositorio `geominer-bolivia` de su GitHub.
-3. Framework: Vite. Build: `npm run build`. Output: `dist`.
-4. Desplegar. El servidor API se publica como `api/sentinel.js`.
+## Arquitectura
 
-**Atención:** Vercel Hobby es para uso personal/no comercial. Al comenzar a cobrar informes, migrar a un plan/hosting permitido para uso comercial.
+- `src/cog-analysis.js`: lectura remota de COG y reproyección UTM mediante `geotiff` + `proj4`.
+- `src/indices.js`: cálculos, máscara de superficie, cuantiles, imagen RGBA y exportación a GeoJSON.
+- `lib/analysis-catalog.js`: validación de áreas, filtrado de URLs COG, búsqueda STAC.
+- `api/analysis-scenes.js`: API de Vercel.
+- `vite.config.js`: la misma API cuando se ejecuta en localhost.
+- `src/App.jsx`: interfaz y capa georreferenciada MapLibre.
 
-## Supabase — siguiente etapa
-1. Amanda abre https://supabase.com/dashboard y crea el proyecto `geominer-bolivia`, si tiene cupo gratuito.
-2. La primera versión NO requiere Supabase para funcionar.
-3. Cuando agreguemos autenticación, revisaremos y ejecutaremos `supabase/schema.sql`, activaremos Auth y conectaremos la app.
-4. No revelar contraseñas, claves `service_role` ni clave de OpenAI en el navegador; tampoco subir `.env`.
+## Fuentes y lectura adicional
 
-## OpenAI — siguiente etapa
-Utilizaremos **Responses API** desde backend seguro. Nunca poner `OPENAI_API_KEY` en variables con prefijo `VITE_`. El asistente interpretará resultados calculados por el motor geoespacial; no afirmará presencia de minerales sin verificación.
-
-## Licencias y limitaciones
-- Mosaico EOX Sentinel-2 cloudless 2016 © EOX IT Services GmbH (Contains modified Copernicus Sentinel data 2016), **CC BY 4.0**. Fuente: https://cloudless.eox.at/documentation/license
-- No sustituir por mosaicos 2018–2025 de EOX en un producto comercial sin licencia, pues se distribuyen bajo CC BY-NC-SA 4.0.
-- La disponibilidad del servicio público EOX puede variar y está sujeta a sus condiciones de servicio; revisar al crecer el tráfico.
-
-## Fuentes oficiales
-- https://documentation.dataspace.copernicus.eu/APIs/STAC.html
-- https://dataspace.copernicus.eu/
-- https://supabase.com/docs/
-- https://vercel.com/docs/
-
-## Advertencias
-Los resultados preliminares no sustituyen muestreos, laboratorio, estudios de campo ni comprobación de derechos mineros. El mapa CARTO/OSM se usa para pruebas; revisar términos y proveedor adecuados antes de lanzamiento comercial. El catálogo oficial puede aplicar cuotas y cambiar su endpoint; la llamada está aislada en `lib/catalog.js` para poder actualizarlo.
+- https://github.com/Element84/earth-search/blob/main/docs/collections/sentinel-2-l2a.md
+- https://registry.opendata.aws/sentinel-2-l2a-cogs/
+- https://geotiffjs.github.io/geotiff.js/
+- https://www.mdpi.com/2076-3417/15/24/13251
+- https://www.openstreetmap.org/copyright

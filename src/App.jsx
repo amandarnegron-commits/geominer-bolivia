@@ -1,6 +1,8 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import maplibregl from 'maplibre-gl';
 import { squareFromCenter, bboxGeoJSON, bboxKml } from './geo.js';
+import { analyseScene } from './cog-analysis.js';
+import { INDICATORS, statsFor, rasterRGBA, exportTopPoints } from './indices.js';
 import {
   Satellite, MapPinned, Layers3, Map, Search, Compass, Mountain, Waves,
   Crosshair, ScanLine, Database, FileText, ChevronDown, ExternalLink,
@@ -46,6 +48,15 @@ export default function App() {
   const [gpsSide, setGpsSide] = useState('5');
   const [cloudMax, setCloudMax] = useState('100');
   const [scenes, setScenes] = useState(null);
+  const [analysisScenes, setAnalysisScenes] = useState(null);
+  const [analysisScene, setAnalysisScene] = useState(null);
+  const [analysisBusy, setAnalysisBusy] = useState(false);
+  const [analysisMessage, setAnalysisMessage] = useState('');
+  const [analysisError, setAnalysisError] = useState('');
+  const [analysisResult, setAnalysisResult] = useState(null);
+  const [indicator, setIndicator] = useState('iron');
+  const [heatmapUrl, setHeatmapUrl] = useState(null);
+  const abortAnalysis = useRef(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [saved, setSaved] = useState(readSaved);
@@ -53,6 +64,12 @@ export default function App() {
   const [mobilePanel, setMobilePanel] = useState(false);
   const area = useMemo(() => areaOf(bbox), [bbox]);
   const visibleScenes = useMemo(() => (scenes?.scenes || []).filter(s => s.cloud !== null && s.cloud <= Number(cloudMax)), [scenes, cloudMax]);
+  const analysisStats = useMemo(() => analysisResult ? statsFor(analysisResult[indicator]) : null,[analysisResult,indicator]);
+  function clearSpectral() {
+    abortAnalysis.current?.abort();
+    setAnalysisResult(null);setHeatmapUrl(null);setAnalysisScenes(null);setAnalysisScene(null);
+    setAnalysisError('');setAnalysisMessage('');
+  }
 
   useEffect(() => {
     if (!mapContainer.current || map.current) return;
@@ -89,6 +106,7 @@ export default function App() {
         setStartPoint(point);
         setBbox(null);
         setScenes(null);
+        clearSpectral();
         setError('');
       } else {
         const a=firstCorner.current;
@@ -96,6 +114,7 @@ export default function App() {
         setStartPoint(null);
         setBbox([Math.min(a[0],point[0]),Math.min(a[1],point[1]),Math.max(a[0],point[0]),Math.max(a[1],point[1])]);
         setScenes(null);
+        clearSpectral();
         setError('');
       }
     });
@@ -121,10 +140,77 @@ export default function App() {
     if (instance.isStyleLoaded()) change(); else instance.once('load', change);
   }, [baseLayer]);
 
+  // Geo-referenciamos exactamente la cuadrícula del análisis en el terreno elegido.
+  useEffect(() => {
+    const instance=map.current;
+    if(!instance)return;
+    const apply=()=>{
+      if(instance.getLayer('spectral-overlay')) instance.removeLayer('spectral-overlay');
+      if(instance.getSource('spectral-overlay')) instance.removeSource('spectral-overlay');
+      if(!heatmapUrl||!bbox||!instance.getLayer('area-border'))return;
+      const [w,s,e,n]=bbox;
+      instance.addSource('spectral-overlay',{
+        type:'image',url:heatmapUrl,
+        coordinates:[[w,n],[e,n],[e,s],[w,s]]
+      });
+      instance.addLayer({id:'spectral-overlay',type:'raster',source:'spectral-overlay',paint:{'raster-opacity':0.9}},'area-border');
+    };
+    if(instance.isStyleLoaded())apply();else instance.once('load',apply);
+  },[heatmapUrl,bbox]);
+
+  useEffect(()=>{
+    if(!analysisResult)return;
+    const selected=analysisResult[indicator];
+    const stats=statsFor(selected);
+    const canvas=document.createElement('canvas');
+    canvas.width=analysisResult.width;canvas.height=analysisResult.height;
+    const ctx=canvas.getContext('2d');
+    ctx.putImageData(new ImageData(rasterRGBA(selected,stats,indicator),canvas.width,canvas.height),0,0);
+    setHeatmapUrl(canvas.toDataURL('image/png'));
+  },[analysisResult,indicator]);
+
+  async function findAnalysisScenes() {
+    if(!bbox||area>25.01||area<0.01){setAnalysisError('Para el análisis selecciona una zona de 0,01 a 25 km².');return;}
+    setAnalysisBusy(true);setAnalysisError('');setAnalysisScenes(null);setAnalysisScene(null);
+    setAnalysisResult(null);setHeatmapUrl(null);
+    setAnalysisMessage('Buscando escenas públicas con bandas B2, B4, B8, B11 y B12…');
+    setActiveTab('analysis');
+    try {
+      const res=await fetch('/api/analysis-scenes?bbox='+encodeURIComponent(bbox.join(',')));
+      const data=await res.json();
+      if(!res.ok)throw new Error(data.error||'No se encontraron escenas para análisis.');
+      setAnalysisScenes(data);
+      setAnalysisScene(data.scenes[0]||null);
+      setAnalysisMessage(data.scenes.length?'Selecciona la escena y procesa las bandas.':'No hay escenas disponibles; prueba otro terreno.');
+    }catch(err){setAnalysisError(err?.message||'Error de conexión con Earth Search.');}
+    finally{setAnalysisBusy(false);}
+  }
+
+  async function processAnalysis() {
+    if(!bbox||!analysisScene)return;
+    const controller=new AbortController();abortAnalysis.current=controller;
+    setAnalysisBusy(true);setAnalysisError('');setAnalysisResult(null);setHeatmapUrl(null);
+    try {
+      const result=await analyseScene(analysisScene,bbox,{onProgress:setAnalysisMessage,signal:controller.signal});
+      if(result.valid===0)throw new Error('No hay píxeles de suelo aptos después de excluir nubes, agua y vegetación. Prueba otra fecha o terreno.');
+      setAnalysisResult(result);
+      setAnalysisMessage('Análisis calculado con datos de la escena seleccionada.');
+    }catch(err){if(!controller.signal.aborted)setAnalysisError(err?.message||'Error procesando bandas.');}
+    finally{if(abortAnalysis.current===controller)abortAnalysis.current=null;setAnalysisBusy(false);}
+  }
+  function downloadIndicators() {
+    if(!analysisResult||!bbox)return;
+    const data=exportTopPoints(analysisResult,bbox,indicator);
+    const blob=new Blob([JSON.stringify(data,null,2)],{type:'application/geo+json'});
+    const url=URL.createObjectURL(blob);
+    const a=document.createElement('a');a.href=url;a.download='geominer-indicadores-'+indicator+'.geojson';
+    document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),1000);
+  }
+
   function useGPS() {
     try {
       const b = squareFromCenter(gpsLon,gpsLat,gpsSide);
-      firstCorner.current=null; setStartPoint(null); setBbox(b); setScenes(null); setError('');
+      firstCorner.current=null; setStartPoint(null); clearSpectral(); setBbox(b); setScenes(null); setError('');
       map.current?.fitBounds([[b[0],b[1]],[b[2],b[3]]],{padding:80,maxZoom:14,duration:650});
       setMobilePanel(false);
     } catch (err) { setError(err.message); setActiveTab('scenes'); }
@@ -144,7 +230,7 @@ export default function App() {
     map.current?.flyTo({center:c.coords,zoom:c.zoom,essential:true});
   }
   function reset() {
-    firstCorner.current=null; setStartPoint(null); setBbox(null); setScenes(null); setError('');
+    firstCorner.current=null; setStartPoint(null); clearSpectral(); setBbox(null); setScenes(null); setError('');
   }
   function restore(item) {
     reset();
@@ -189,7 +275,7 @@ export default function App() {
         <div className="sidebar-content">
           <div className="section-cap">PLATAFORMA</div>
           <div className="nav-active"><MapPinned size={18}/><span>Explorador satelital</span><span className="nav-dot"/></div>
-          <div className="nav-disabled"><Layers3 size={18}/><span>Mapas mineralógicos</span><small>Próximo</small></div>
+          <button type="button" className="nav-active spectral-nav" onClick={()=>{setActiveTab('analysis');setMobilePanel(false);}}><Layers3 size={18}/><span>Índices espectrales</span><span className="nav-dot"/></button>
           <div className="nav-disabled"><FileText size={18}/><span>Informes con IA</span><small>Próximo</small></div>
           <div className="sidebar-divider"/>
           <div className="section-cap">ZONA DE TRABAJO</div>
@@ -232,9 +318,12 @@ export default function App() {
             {busy?<LoaderCircle className="spin" size={18}/>:<Satellite size={18}/>}
             {busy?'Buscando imágenes…':'Buscar imágenes Sentinel-2'}
           </button>
-          <div className="limit-note"><Info size={14}/><span>Consulta el catálogo oficial. La búsqueda aún no detecta minerales.</span></div>
+          <button type="button" className="run-btn analysis-run" onClick={findAnalysisScenes} disabled={analysisBusy||!bbox||area<0.01||area>25.01}>
+            <Layers3 size={17}/> Buscar datos para análisis
+          </button>
+          <div className="limit-note"><Info size={14}/><span>Hasta 25 km² para análisis multiespectral gratuito. Los índices no identifican yacimientos.</span></div>
         </div>
-        <div className="sidebar-foot"><span className="live-dot"/> GeoMiner v0.2.1 <span className="foot-right">PROTOTIPO</span></div>
+        <div className="sidebar-foot"><span className="live-dot"/> GeoMiner v0.3 <span className="foot-right">PROTOTIPO</span></div>
       </aside>
       <main className="main-area">
         <header className="topbar">
@@ -244,19 +333,20 @@ export default function App() {
           </div>
           <div className="topbar-meta">
             <span className="state-pill"><span className="live-dot"/> Catálogo Copernicus</span>
-            <span className="v-tag">Beta 0.2.1</span>
+            <span className="v-tag">Beta 0.3</span>
           </div>
         </header>
         <section className="work-area">
           <div className="map-column">
-            <div className="map-title"><div><strong>Mapa de exploración</strong><span>Bolivia · Cartografía y mosaico satelital histórico</span></div>
+            <div className="map-title"><div><strong>Mapa de exploración</strong><span>Bolivia · Cartografía, Sentinel-2 histórico e índices espectrales</span></div>
               <div className="map-tools"><div className="layer-switch"><button className={baseLayer==='streets'?'active':''} onClick={()=>setBaseLayer('streets')}><Map size={14}/> Mapa</button><button className={baseLayer==='historical'?'active':''} onClick={()=>setBaseLayer('historical')}><Satellite size={14}/> Satélite 2016</button></div><button className="small-square" title="Volver a Potosí" onClick={()=>goCity(CITIES[0])}><Navigation size={17}/></button></div>
             </div>
             <div className="map-wrap">
               <div ref={mapContainer} className="map"/>
               <div className="map-tip"><Crosshair size={16}/><span>{startPoint?'Selecciona la segunda esquina':bbox?'Área delimitada · puedes consultar escenas':'Dos clics para delimitar tu terreno'}</span></div>
               <div className="map-legend"><span className="legend-swatch"/> Área seleccionada</div>
-              {baseLayer==='historical'&&<div className="map-history-warning">Mosaico Sentinel-2 de 2016 · Referencia histórica, no escena actual ni detección mineral.</div>}
+              {baseLayer==='historical'&&<div className="map-history-warning">Mosaico Sentinel-2 de 2016 · Imagen de referencia histórica.</div>}
+              {analysisResult&&<div className="map-spectral-warning">{indicator==='iron'?'B4/B2':'B11/B12'} · Respuesta relativa de superficie · {dateStr(analysisScene?.date)} · NO es mineral confirmado.</div>}
               {cursor&&<div className="coordinates">LAT {cursor[0]} · LON {cursor[1]}</div>}
             </div>
             <div className="map-bottom">
@@ -271,9 +361,36 @@ export default function App() {
             </div>
             <div className="inspector-tabs">
               <button onClick={()=>setActiveTab('scenes')} className={activeTab==='scenes'?'selected':''}>Imágenes</button>
+              <button onClick={()=>setActiveTab('analysis')} className={activeTab==='analysis'?'selected':''}>Análisis</button>
               <button onClick={()=>setActiveTab('saved')} className={activeTab==='saved'?'selected':''}>Mis áreas <span>{saved.length}</span></button>
             </div>
-            {activeTab==='scenes' ? (
+            {activeTab==='analysis' ? (
+              <div className="panel-inner spectral-panel">
+                <div className="spectral-intro"><Layers3 size={19}/><div><strong>Prospección espectral preliminar</strong><p>Sentinel-2 L2A · bandas reales B2, B4, B8, B11 y B12 · clasificación de terreno SCL.</p></div></div>
+                {!bbox&&<div className="empty-state compact"><Crosshair size={31} className="muted"/><strong>Selecciona tu terreno</strong><p>Delimita un terreno con GPS o dos clics en el mapa. Después busca escenas para analizar.</p></div>}
+                {bbox&&area>25.01&&<div className="error-box"><Info size={17}/> Elige 5 × 5 km o menos para el procesamiento inicial. Área actual: {fmt(area)} km².</div>}
+                {bbox&&area<=25.01&&<div className="spectral-step"><strong>1. Buscar imágenes multiespectrales</strong><button type="button" onClick={findAnalysisScenes} disabled={analysisBusy}>Consultar escenas gratuitas</button></div>}
+                {analysisError&&<div className="error-box"><AlertTriangle size={17}/>{analysisError}</div>}
+                {analysisBusy&&<div className="spectral-loading"><LoaderCircle className="spin" size={17}/>{analysisMessage}</div>}
+                {analysisScenes&&<div className="spectral-scene-box"><small>Catálogo Earth Search · {analysisScenes.examined} escenas examinadas</small><label htmlFor="analysis-scene-select">Escena para procesar</label>
+                  {analysisScenes.scenes.length ? <select id="analysis-scene-select" value={analysisScene?.id||''} onChange={e=>{setAnalysisScene(analysisScenes.scenes.find(s=>s.id===e.target.value)||null);setAnalysisResult(null);setHeatmapUrl(null);}}>
+                    {analysisScenes.scenes.map(scene=><option value={scene.id} key={scene.id}>{dateStr(scene.date)} · Nubes {scene.cloud}% · {scene.platform}</option>)}
+                  </select>:<p>No se encontraron escenas completas con las bandas requeridas.</p>}
+                  <p>La nubosidad corresponde a toda la escena, no necesariamente a tu terreno.</p>
+                  <button className="run-btn spectral-process" onClick={processAnalysis} disabled={analysisBusy||!analysisScene}><ScanLine size={17}/> 2. Procesar bandas de la escena</button>
+                </div>}
+                {analysisResult&&analysisStats&&<div className="spectral-output">
+                  <strong>Resultados de índices relativos</strong>
+                  <div className="spectral-mode">
+                    {Object.entries(INDICATORS).map(([id,meta])=><button key={id} className={indicator===id?'active':''} onClick={()=>setIndicator(id)}>{id==='iron'?'B4/B2 · Hierro':'B11/B12 · SWIR'}</button>)}
+                  </div>
+                  <div className="spectral-stat-grid"><div><small>Píxeles útiles</small><strong>{fmt(analysisResult.valid)} / {fmt(analysisResult.total)}</strong></div><div><small>Percentil 90</small><strong>{analysisStats.p90?.toFixed(3)??'s/d'}</strong></div></div>
+                  <p className="spectral-explain">{INDICATORS[indicator].label}. El mapa resalta valores superiores al percentil 75 <strong>dentro de este terreno</strong>; no equivale a una concentración o yacimiento confirmado.</p>
+                  <button onClick={downloadIndicators} className="spectral-export"><Download size={15}/> Descargar puntos de respuesta alta (GeoJSON)</button>
+                </div>}
+                <div className="spectral-footnote">El análisis se ejecuta en tu navegador usando COGs públicos. Puede consumir varios MB y requerir conexión estable. Los resultados deben validarse con geólogos y muestreo.</div>
+              </div>
+            ) : activeTab==='scenes' ? (
               <div className="panel-inner">
                 {error&&<div className="error-box"><AlertTriangle size={17}/>{error}</div>}
                 {!scenes && !busy && <div className="empty-state"><div className="empty-illustration"><Satellite size={38}/><span/></div><strong>Tu investigación comienza aquí</strong><p>Selecciona dos puntos en el mapa y consulta las escenas Sentinel-2 disponibles en Copernicus.</p><div className="empty-source"><Database size={16}/> Datos oficiales, no simulados</div></div>}
@@ -300,7 +417,7 @@ export default function App() {
             )}
             <div className="inspector-foot">
               <div className="next-heading"><span className="future-dot"/><strong>Próxima etapa</strong></div>
-              <div className="next-feature"><div><Layers3 size={19}/></div><p><strong>Índices espectrales</strong><span>Óxidos de hierro y alteraciones superficiales.</span></p></div>
+              <div className="next-feature"><div><Layers3 size={19}/></div><p><strong>Índices espectrales</strong><span>Disponible en pestaña Análisis (experimental).</span></p></div>
               <div className="next-feature"><div><FileText size={19}/></div><p><strong>Informe con OpenAI</strong><span>Interpretación con advertencias geológicas y PDF.</span></p></div>
             </div>
           </div>
