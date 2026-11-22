@@ -142,3 +142,45 @@ h1{font-family:Manrope,sans-serif;font-size:23px;color:#18313d;margin:0;letter-s
 .report-zone-totals{display:grid;grid-template-columns:1fr 1fr;gap:7px;color:#3e7770;font-size:10px}.report-zone-totals span{display:grid;gap:5px;padding:9px 8px;background:#eff8f5;border-radius:7px}.report-zone-totals strong{font-size:11px}
 .ai-formatted h3{font-size:12px;color:#236c5a;margin:16px 0 6px}.ai-formatted p{white-space:pre-wrap;line-height:1.65;margin:4px 0 9px}
 @media(max-width:720px){.anomaly-map-count{bottom:62px;font-size:9px}.anomaly-map-marker{width:27px;height:27px;font-size:11px}}
+
+/* v0.6: estudio piloto y fuentes geológicas verificables */
+.pilot-shortcut{background:linear-gradient(135deg,#204757,#153343);border-color:#3c6870}
+.pilot-shortcut>strong{display:block;font-size:13px;color:#f1faf6;margin:0 0 6px}
+.pilot-shortcut p{color:#afc9cf;font-size:11px;line-height:1.55;margin:0 0 12px}
+.pilot-shortcut button{background:#43bfa3;color:#0f3740;border:0;border-radius:9px;display:flex;align-items:center;justify-content:center;gap:8px;width:100%;padding:11px 8px;font-size:12px;font-weight:800}
+.pilot-geology{padding:17px 17px 24px;color:#304b5b;font-size:12px;line-height:1.65}
+.pilot-geology>p{padding:0 2px;margin:12px 0}
+.pilot-heading{display:flex;align-items:center;gap:10px;padding:14px;background:#e9f3ef;border-radius:10px;color:#187c69;margin-bottom:13px}
+.pilot-heading strong{font-size:13px;display:block;line-height:1.4}.pilot-heading p{margin:4px 0 0;color:#638379;font-size:11px}
+.pilot-context-status{padding:9px 10px;border:1px solid #d6e7df;background:#f6faf8;color:#367666;border-radius:8px;font-weight:700;font-size:11px}
+.pilot-warning{display:flex;align-items:flex-start;gap:9px;background:#fff4ea;color:#8c563d;padding:11px;border:1px solid #f3ddcc;border-radius:9px;font-size:11px;line-height:1.6;margin:12px 0}
+.pilot-warning svg{flex-shrink:0;margin-top:3px}
+.pilot-geology h3{color:#2d4c58;font-size:12px;margin:20px 0 10px}
+.pilot-source{display:flex;align-items:flex-start;justify-content:space-between;gap:9px;padding:11px 6px;border-bottom:1px solid #e7eeed;text-decoration:none}
+.pilot-source:hover{background:#f4faf7}.pilot-source span{display:grid;gap:5px}.pilot-source strong{font-size:11px;color:#1d7772}.pilot-source small{font-size:10px;color:#7d969c;line-height:1.5}.pilot-source>svg{flex-shrink:0;color:#6d9d8d}
+.pilot-source-note{font-size:10px;color:#788f97;padding:13px 2px;line-height:1.6}
+.inspector-tabs{overflow-x:auto;scrollbar-width:thin;flex-shrink:0}.inspector-tabs button{flex-shrink:0}
+
+/* GeoMiner 0.7: validación de señales entre fechas y revisión de sectores */
+.validation-panel{padding:16px;color:#355462;font-size:11px;line-height:1.6}
+.validation-panel .pilot-heading{margin-bottom:15px}
+.validation-content{display:grid;gap:11px}
+.validation-content h3{margin:11px 0 0;color:#235466;font:800 12px Manrope,system-ui,sans-serif}
+.validation-content p{margin:0;color:#708892;font-size:11px;line-height:1.7}
+.validation-content label{display:block;font-size:11px;font-weight:700;color:#3d606d}
+.validation-scenes{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.validation-scenes>div{background:#f1f7f6;border-radius:9px;padding:10px;min-width:0;display:grid;align-content:start;gap:7px}
+.validation-scenes small{font-size:10px;color:#7b9299}
+.validation-scenes strong{color:#2b5e60;font-size:12px}
+.validation-content select,.validation-content textarea{width:100%;max-width:100%;border:1px solid #dae6e7;background:#fff;color:#355565;border-radius:8px;padding:10px;font:500 11px 'DM Sans',sans-serif}
+.validation-content select:focus,.validation-content textarea:focus{outline:2px solid #5bbca6;outline-offset:1px}
+.validation-content button{white-space:normal;text-align:center}
+.validation-selected{padding:11px;border:1px solid #d6e8e4;border-radius:9px;color:#207567;background:#f5fbf8;font-size:11px;overflow-wrap:anywhere}
+.validation-results{border:1px solid #d5eae6;background:#f7fbfa;border-radius:10px;padding:13px;display:grid;gap:10px}
+.validation-results>p{font-size:10px;color:#698089}
+.validation-cov,.validation-metric{display:grid;gap:4px;padding-bottom:9px;border-bottom:1px solid #e1ecea}
+.validation-cov small,.validation-metric small{font-size:10px;color:#7b9698}
+.validation-cov strong,.validation-metric strong{color:#28796f;font-size:13px}
+.validation-metric span{color:#6b8992;font-size:10px}
+.report-validation-note{margin:13px 0;border:1px solid #d4e8e3;background:#f7faf8;border-radius:8px;padding:10px;color:#4f7972;font-size:11px;line-height:1.6}
+@media(max-width:440px){.validation-scenes{grid-template-columns:1fr}}
